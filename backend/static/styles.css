@@ -56,7 +56,12 @@ code{background:#eef2fb;padding:1px 6px;border-radius:6px;font-size:.9em}
 .status{margin:10px 0 0;font-size:.92rem;color:var(--muted)}
 .status.done{color:var(--green-dark)}
 .status.failed{color:#b42323}
-.countdown{font-weight:800;color:var(--blue)}
+/* 2D loading spinner - "please hold on" */
+.spinner-wrap{display:flex;align-items:center;gap:14px;margin-top:12px;background:var(--blue-light);border:1px solid #c9dbff;border-radius:12px;padding:12px 16px}
+.spinner{width:38px;height:38px;flex:none;border-radius:50%;border:4px solid #c9dbff;border-top-color:var(--blue);animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner-text{font-weight:700;color:var(--blue-dark)}
+.spinner-sub{font-size:.82rem;color:var(--muted);font-weight:400}
 .result-box{background:#f0f7f0;border:1px solid #bfe3c8;border-radius:12px;padding:12px 14px;margin-top:10px;word-break:break-all}
 .result-box .label{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:var(--green-dark);font-weight:800}
 .result-box a{color:var(--blue-dark);font-size:.9rem}
