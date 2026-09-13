@@ -19,51 +19,50 @@
 <section class="hero">
   <div class="hero-inner">
     <h1>Skip the 4-step wait.<br />Get your real link.</h1>
-    <p class="sub">Install the free helper once — then every LinkShortX link bypasses itself <b>right in your tab</b>, on your own internet. Zero clicks, zero block pages, zero stress.</p>
-    <div class="hero-cta"><a href="#bypass" class="btn btn-white">Bypass a link ↓</a><a href="#how" class="btn btn-ghost">How it works</a></div>
-    <div class="hero-badges"><span>⚡ zero clicks after setup</span><span>🏠 runs on YOUR internet</span><span>💾 history saved</span></div>
+    <p class="sub">Install the free extension once — then paste links in its popup and watch them bypass themselves <b>right in your tab</b>, on your own internet. Zero block pages, zero stress.</p>
+    <div class="hero-cta"><a href="#bypass" class="btn btn-white">Get the extension ↓</a><a href="#how" class="btn btn-ghost">How it works</a></div>
+    <div class="hero-badges"><span>🧩 1 install, done forever</span><span>🏠 runs on YOUR internet</span><span>💾 history saved</span></div>
   </div>
   <div class="wave"></div>
 </section>
 <section id="how" class="section">
   <h2>What the LinkBypassor does</h2>
   <div class="cards">
-    <div class="card"><div class="step">1</div><h3>Paste your short link</h3><p>Any <code>linkshortx.in/XXXXXX</code> link. No account, no extension needed.</p></div>
-    <div class="card"><div class="step">2</div><h3>It runs on YOUR internet</h3><p>The helper lives in <b>your browser</b>, so the shortener sees your clean residential IP — never a blocked datacenter. No proxies, no servers.</p></div>
+    <div class="card"><div class="step">1</div><h3>Paste in the extension popup</h3><p>Click the LinkBypassor icon, paste any <code>linkshortx.in/XXXXXX</code> link, hit <b>Bypass</b>. No account needed.</p></div>
+    <div class="card"><div class="step">2</div><h3>It runs on YOUR internet</h3><p>The extension lives in <b>your browser</b>, so the shortener sees your clean residential IP — never a blocked datacenter. No proxies, no servers.</p></div>
     <div class="card"><div class="step">3</div><h3>It clears the interstitial</h3><p>Back on LinkShortX it waits out the 5-second countdown and presses <b>Get Link</b> to mint your <code>/links/gw/…</code> gateway URL.</p></div>
     <div class="card"><div class="step">4</div><h3>You get the Telegram link</h3><p>The gateway resolves to your final destination (usually a Telegram bot). Copy it or open it — done.</p></div>
   </div>
   <div class="note">⚡ Each link takes about <b>1 minute</b> by itself in your tab — and your result is <b>auto-saved</b> to <a href="#history">History</a> on this site when it lands.</div>
 </section>
 <section id="bypass" class="section section-alt">
-  <h2>Get the helper (one-time, ~1 min)</h2>
-  <p class="muted">Install once — every short link bypasses itself after that. No accounts, no drag-to-bookmarks, no console.</p>
+  <h2>Get the extension (one-time, ~1 min)</h2>
+  <p class="muted">Install once — paste links in its popup forever after. No Tampermonkey, no console, no tech skills.</p>
   <div class="cards">
     <div class="card">
       <div class="step">1</div>
-      <h3>Install Tampermonkey (free)</h3>
-      <p>The tiny extension that runs the helper. Pick your browser:</p>
+      <h3>Download the extension</h3>
+      <p>Grab the folder (or clone the repo). It's free and open source:</p>
       <p style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-        <a class="btn btn-small" href="https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo" target="_blank" rel="noopener">Chrome / Edge</a>
-        <a class="btn btn-small" href="https://addons.mozilla.org/firefox/addon/tampermonkey/" target="_blank" rel="noopener">Firefox</a>
+        <a class="btn btn-green" href="https://github.com/Alex-Leo-Reeves/linkbypassor/tree/main/extension" target="_blank" rel="noopener">📁 Get extension files</a>
       </p>
     </div>
     <div class="card">
       <div class="step">2</div>
-      <h3>Install LinkBypassor</h3>
-      <p>Click — Tampermonkey pops an install screen, hit <b>Install</b>:</p>
-      <p style="margin-top:10px"><a class="btn btn-green" href="/bypass.user.js" target="_blank" rel="noopener">⚡ Install LinkBypassor</a></p>
+      <h3>Load it in your browser</h3>
+      <p><b>Chrome / Edge / Brave:</b> open <code>chrome://extensions</code> → <b>Developer mode</b> on → <b>Load unpacked</b> → pick the <code>extension/</code> folder.<br /><b>Firefox:</b> open <code>about:debugging#/runtime/this-firefox</code> → <b>Load Temporary Add-on</b> → pick <code>manifest.json</code>.</p>
     </div>
     <div class="card">
       <div class="step">3</div>
-      <h3>Done — open any short link</h3>
-      <p>That's it. Open a <code>linkshortx.in/XXXXXX</code> link and watch the blue pill walk it home (~1 min). Result lands in <a href="#history">History</a>.</p>
+      <h3>Paste → Bypass → done</h3>
+      <p>Click the LinkBypassor icon, paste a link, hit <b>Bypass</b>. The link opens in a new tab and walks itself home (~1 min). Result pops in the popup + <a href="#history">History</a>.</p>
     </div>
   </div>
   <div id="oneClickHelp" class="note" style="display:none;margin-top:16px">
-    <b>No Tampermonkey?</b> Paste-link fallback while our server is blocked —
-    ① <button id="copyBm2" class="btn btn-small">📋 Copy 1-click code</button>
+    <b>Haven't installed the extension yet?</b> Manual fallback —
+    ① <button id="copyBm2" class="btn btn-small">📋 Copy helper code</button>
     ② open your short link in a new tab ③ paste the code in the address bar (type <code>javascript:</code> first) or console, hit Enter.
+    For the smooth experience, <b>install the extension above</b> — then this step disappears forever.
   </div>
 </section>
 <section id="history" class="section">
