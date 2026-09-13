@@ -119,13 +119,30 @@ async def run_bypass(short_url: str, progress_cb=None):
 
         page.on("response", on_resp)
         prog("Opening short link...")
-        await page.goto(short_url, wait_until="domcontentloaded", timeout=45000)
+        try:
+            await page.goto(short_url, wait_until="domcontentloaded", timeout=45000)
+        except Exception:
+            pass  # google interstitial / slow load - URL still lands, keep going
+        # the short link bounces: linkshortx -> q7m4vk29.php -> google -> article.
+        # domcontentloaded may fire on an intermediate hop; follow until we
+        # reach a hindisink article (or timeout after ~30s).
+        for _ in range(30):
+            try:
+                url = page.url
+                if "hindisink.com" in url and "q7m4vk29" not in url and "google.com" not in url:
+                    break
+            except Exception:
+                pass
+            await asyncio.sleep(1)
         await asyncio.sleep(3)
 
         for i in [1, 2, 3]:
             prog(f"Step {i} of 4: verifying...")
             if not await _wait_fwd(page):
-                raise RuntimeError(f"Step {i}: verification form not found (link may have expired)")
+                # maybe still on a google/q7m4vk29 hop or slow render - wait longer
+                await asyncio.sleep(10)
+                if not await _wait_fwd(page, timeout=20):
+                    raise RuntimeError(f"Step {i}: verification form not found (link may have expired)")
             await page.evaluate("document.getElementById('hsg')?.remove();document.documentElement.style.overflow='';")
             await asyncio.sleep(DWELL)
             await page.evaluate("document.getElementById('fwd').submit()")
