@@ -6,7 +6,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from .bridge import bridge_configured, dispatch_bypass
 from .db import create_job, ensure_device, get_job, init_db, list_jobs, update_job
 from .worker import run_bypass
 
@@ -43,13 +42,18 @@ def _run_job(jid, short_url):
     def prog(msg):
         update_job(jid, status="running", progress=msg)
 
-    # Strategy order (all server-side, zero user steps):
-    #  0. curl_cffi HTTP fast path (no browser, ~40s): TLS-spoofed entry +
-    #     token POSTs for steps 1-3, then hands step-4/interstitial to the
-    #     browser. Falls through on any HTTP-* error.
-    #  1. GitHub Actions worker (Azure IPs, free) - when configured.
-    #  2. Local Playwright full chain (works wherever the host IP passes).
+    # Render-only strategy order (all server-side, zero user steps):
+    #  0. curl_cffi HTTP fast path (no browser, ~40s). Falls through fast
+    #     on any HTTP-* error (including HTTP-403 datacenter block).
+    #  1. Local Playwright full chain (works wherever the host IP passes).
+    # NOTE: the GitHub Actions bridge is intentionally NOT in this path:
+    # Azure runners 403 identically, and dispatching only burns minutes
+    # before the same failure. See PROBLEM.md.
     update_job(jid, status="running", progress="Starting...")
+    # Strategy 0: HTTP fast path first (cheap, ~40s). Any HTTP-* error means
+    # the datacenter IP is rejected at that stage -> fall through to browser.
+    # A non-HTTP exception (missing lib, bug) is also non-fatal: fall through.
+    curl_res = None
     try:
         from .curl_path import run_curl_bypass
 
@@ -57,33 +61,23 @@ def _run_job(jid, short_url):
             prog("Trying HTTP fast path...")
             curl_res = run_curl_bypass(short_url, progress_cb=prog)
         except Exception as e:
-            msg = str(e)
-            if msg.startswith("HTTP-"):
-                prog(f"Fast path skipped ({msg}); using browser...")
-                curl_res = None
+            if str(e).startswith("HTTP-"):
+                prog(f"Fast path skipped ({e}); using browser...")
             else:
-                raise
-        if curl_res and curl_res.get("telegram"):
-            tg = curl_res["telegram"]
-            update_job(
-                jid, status="done", progress="Done!",
-                gateway=curl_res.get("gateway"), telegram=tg,
-                final_url=curl_res.get("final_url") or tg,
-            )
-            return
-        if curl_res:
-            prog(f"Fast path done through step 3 ({curl_res.get('final_href', '')[:60]}); browser takes step 4...")
+                prog(f"Fast path unavailable ({str(e)[:120]}); using browser...")
     except Exception as e:
-        # curl_cffi missing or unexpected bug: don't kill the job, fall through.
-        if "HTTP-" not in str(e)[:6]:
-            prog(f"Fast path unavailable ({str(e)[:120]}); using browser...")
-    if bridge_configured():
-        update_job(jid, status="running", progress="Starting remote worker...")
-        ok, msg = dispatch_bypass(jid, short_url, (get_job(jid) or {}).get("device_id", ""))
-        if ok:
-            update_job(jid, status="running", progress="Remote worker started (free Azure runner)...")
-            return
-        update_job(jid, status="running", progress=f"Remote dispatch failed ({msg}); trying local browser...")
+        prog(f"Fast path unavailable ({str(e)[:120]}); using browser...")
+    if curl_res and curl_res.get("telegram"):
+        tg = curl_res["telegram"]
+        update_job(
+            jid, status="done", progress="Done!",
+            gateway=curl_res.get("gateway"), telegram=tg,
+            final_url=curl_res.get("final_url") or tg,
+        )
+        return
+    if curl_res:
+        prog(f"Fast path through step 3 ({(curl_res.get('final_href') or '')[:60]}); browser takes step 4...")
+    # Strategy 1: local Playwright full chain.
     try:
         result = asyncio.run(run_bypass(short_url, progress_cb=prog))
         telegram = result.get("telegram") or result.get("final_url")
