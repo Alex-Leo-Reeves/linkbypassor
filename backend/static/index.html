@@ -9,9 +9,9 @@
 <title>LinkBypassor — Skip the wait, get your link</title>
 <link rel="stylesheet" href="styles.css" />
 <script>
-  // API base URL: empty = same origin (laptop), or set to laptop URL when hosted on Render.
-  // Render injects this via template; laptop leaves it empty.
-  window.LB_API_BASE = "";
+  // Laptop server exposed via ngrok. Render serves the UI, ngrok routes API to your laptop.
+  // Stable URL tied to your ngrok auth token (survives restarts).
+  window.LB_API_BASE = "https://rigor-snowsuit-handcraft.ngrok-free.dev";
 </script>
 
 <link rel="stylesheet" href="styles.css" />
