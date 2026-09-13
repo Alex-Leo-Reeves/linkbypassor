@@ -1,16 +1,18 @@
 """Bypass worker: fast path (~1 min). The 15-20s countdown + 5s hold per step
 are pure client-side JS that only unhide buttons - the server can't see them.
 The server enforces ONE thing: ~3s+ dwell per step page before submitting
-(submit faster -> next page renders 'link expired'). 6s dwell passes cleanly.
-Heavy ad/tracker resources are blocked to speed page loads."""
+(submit faster -> next page renders 'link expired'). 6s dwell passes cleanly."""
 import asyncio
+import os
+import shutil
+
+# Force the Render install location BEFORE playwright resolves anything.
+# render.yaml sets this too, but yaml env has been ignored before - code wins.
+os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/render/project/src/.playwright-browsers")
 
 from playwright.async_api import async_playwright
 
 DWELL = 6  # seconds per step page; minimum proven ~3s, 6s = safe margin
-
-BLOCKED = ("googlesyndication", "doubleclick", "google-analytics",
-           "googletagmanager", "facebook.net")
 
 _browsers_ready = False
 
@@ -30,12 +32,10 @@ def _ensure_browsers():
     try:
         with sync_playwright() as pw:
             exe = pw.chromium.executable_path
-            import os
-
             if os.path.exists(exe):
                 try:
                     full = os.path.join(os.path.dirname(os.path.dirname(exe)), "chrome-linux", "chrome")
-                    print(f"[worker] playwright exe={exe} exists={os.path.exists(exe)} full_build={full} exists={os.path.exists(full)}", flush=True)
+                    print(f"[worker] playwright exe={exe} full_build={full} exists={os.path.exists(full)}", flush=True)
                 except Exception:
                     pass
                 _browsers_ready = True
@@ -52,10 +52,6 @@ def _ensure_browsers():
 async def _new_page(pw):
     _ensure_browsers()
     launch_kw = {
-        # channel="chromium" forces the FULL chromium build instead of the
-        # headless-shell stub - headless shell cannot run the JS redirect
-        # chain (strands on linkshortx.in with a 1430-byte shell, no nav).
-        # Falls back to default headless shell if full chromium is missing.
         "headless": True,
         "args": [
             "--no-sandbox",
@@ -65,49 +61,44 @@ async def _new_page(pw):
             "--disable-blink-features=AutomationControlled",
         ],
     }
-    import os
-
-    try:
-        from playwright.sync_api import sync_playwright as _spw
-
-        with _spw() as _pw:
-            _exe = _pw.chromium.executable_path
-            _full = os.path.join(os.path.dirname(os.path.dirname(_exe)), "chrome-linux", "chrome")
-            if os.path.exists(_full):
-                launch_kw["channel"] = "chromium"
-                print("[worker] using full chromium channel", flush=True)
-            else:
-                print(f"[worker] full chromium missing at {_full}, using headless shell", flush=True)
-    except Exception as _e:
-        print(f"[worker] channel probe failed: {_e}", flush=True)
-    import shutil
-
+    # Full chromium is REQUIRED - the headless-shell stub cannot run the JS
+    # redirect chain (strands on linkshortx.in, no navigation). Fail loud
+    # instead of silently falling back to a browser that can't do the job.
+    exe = pw.chromium.executable_path
+    full = os.path.join(os.path.dirname(os.path.dirname(exe)), "chrome-linux", "chrome")
     sys_chrome = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
-    if sys_chrome:
+    if os.path.exists(full):
+        launch_kw["channel"] = "chromium"
+        print("[worker] using full chromium channel", flush=True)
+    elif sys_chrome:
         launch_kw["executable_path"] = sys_chrome
-    b = await pw.chromium.launch(**launch_kw)
-    ctx = await b.new_context(
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-        viewport={"width": 1366, "height": 900},
-        locale="en-US",
-    )
+        print(f"[worker] using system chrome at {sys_chrome}", flush=True)
+    else:
+        raise RuntimeError(f"full chromium missing (looked for {full}); refusing headless-shell fallback")
+    # Optional residential proxy for datacenter-IP blocks (Issue 2).
+    # Set PROXY_URL env var if the site serves Render IPs a block page.
+    proxy_url = os.environ.get("PROXY_URL", "").strip()
+    if proxy_url:
+        print("[worker] using proxy", flush=True)
+        b = await pw.chromium.launch(**launch_kw)
+        ctx = await b.new_context(
+            proxy={"server": proxy_url},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            viewport={"width": 1366, "height": 900},
+            locale="en-US",
+        )
+    else:
+        b = await pw.chromium.launch(**launch_kw)
+        ctx = await b.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            viewport={"width": 1366, "height": 900},
+            locale="en-US",
+        )
     await ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
     page = await ctx.new_page()
-
-    async def _route(r):
-        try:
-            url = r.request.url
-            # NOTE: do NOT block gpt/ads.js/images - the q7m4vk29 -> google ->
-            # article redirect chain depends on them; blocking strands us on
-            # linkshortx.in with a 1430-byte shell. Only cut pure trackers.
-            if r.request.resource_type == "font" or any(d in url for d in BLOCKED):
-                await r.abort()
-            else:
-                await r.continue_()
-        except Exception:
-            pass
-
-    await page.route("**/*", _route)
+    # NOTE: no request-route blocking. An earlier version aborted gpt/ads.js
+    # and images to save time, but the q7m4vk29 -> google -> article redirect
+    # chain depends on them - blocking strands us on linkshortx.in.
     return b, page
 
 
@@ -133,6 +124,7 @@ async def run_bypass(short_url: str, progress_cb=None):
     gw = None
     tg = None
     final = None
+    resp_chain = []  # last response statuses/urls: diagnoses stuck navigations
     async with async_playwright() as pw:
         b, page = await _new_page(pw)
 
@@ -140,10 +132,14 @@ async def run_bypass(short_url: str, progress_cb=None):
             nonlocal gw, tg
             try:
                 u = r.url
+                resp_chain.append((r.status, u[:120]))
+                if len(resp_chain) > 20:
+                    del resp_chain[: len(resp_chain) - 20]
                 if "/links/gw/" in u:
                     gw = u
                 loc = r.headers.get("location", "")
                 if loc:
+                    resp_chain.append((r.status, f"-> {loc[:120]}"))
                     if "/links/gw/" in loc:
                         gw = loc
                     if "telegram" in loc:
@@ -184,8 +180,16 @@ async def run_bypass(short_url: str, progress_cb=None):
         if reached is None:
             try:
                 html_len = await page.evaluate("document.documentElement.outerHTML.length")
+                html_head = await page.evaluate("document.documentElement.outerHTML.slice(0, 600)")
+                title = await page.title()
             except Exception:
                 html_len = -1
+                html_head = ""
+                title = ""
+            # Log the stuck page content server-side: distinguishes a bot-block
+            # page (needs PROXY_URL) from an empty shell (browser problem).
+            print(f"[worker] STUCK url={page.url[:160]} html_len={html_len} title={title[:120]}", flush=True)
+            print(f"[worker] STUCK head={html_head[:500]!r} chain={resp_chain[-5:]!r}", flush=True)
             raise RuntimeError(f"Step 1: no form rendered (url={page.url[:120]}, html_len={html_len})")
         await asyncio.sleep(2)
 
