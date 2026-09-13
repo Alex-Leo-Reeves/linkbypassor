@@ -120,12 +120,13 @@ async def run_bypass(short_url: str, progress_cb=None):
         page.on("response", on_resp)
         prog("Opening short link...")
         try:
-            await page.goto(short_url, wait_until="domcontentloaded", timeout=45000)
+            # networkidle waits past the q7m4vk29 -> google -> article hop chain
+            await page.goto(short_url, wait_until="commit", timeout=45000)
+            await page.wait_for_load_state("domcontentloaded", timeout=30000)
         except Exception:
             pass  # google interstitial / slow load - URL still lands, keep going
         # the short link bounces: linkshortx -> q7m4vk29.php -> google -> article.
-        # domcontentloaded may fire on an intermediate hop; follow until we
-        # reach a hindisink article (or timeout after ~30s).
+        # wait until we reach a hindisink article (or timeout after ~30s).
         for _ in range(30):
             try:
                 url = page.url
@@ -134,7 +135,15 @@ async def run_bypass(short_url: str, progress_cb=None):
             except Exception:
                 pass
             await asyncio.sleep(1)
-        await asyncio.sleep(3)
+        # wait for the step page to actually render its form (slow free-tier loads)
+        for _ in range(30):
+            try:
+                if await page.locator("#fwd").count() > 0 or await page.locator("#go").count() > 0:
+                    break
+            except Exception:
+                pass
+            await asyncio.sleep(1)
+        await asyncio.sleep(2)
 
         for i in [1, 2, 3]:
             prog(f"Step {i} of 4: verifying...")
