@@ -29,6 +29,8 @@ never borrow the user's residential IP. The options that were evaluated:
 | Tor / free proxy lists / Google-Translate wrappers | ❌ Blocked harder than datacenters, 3–5× slower, breaks the cookie/session chain. Worse than nothing. |
 | Cloudflare Workers / Apps Script free tier | ❌ Still datacenter IPs. Same 403. |
 | Headers / user-agent / flag tricks | ❌ An IP-level 403 ignores all of these. |
+| "Proxy via the user's browser" (fetch page for the server) | ❌ Same-origin policy: our site's JS cannot read linkshortx.in pages. The browser blocks it by design. |
+| "Bundle node.js on Render that scrapes with the user's IP" | ❌ See §5 — a server bundle still runs on the server. Location is what the block checks, not language. |
 
 ## 3. What the current method is (and why it is not ideal)
 
@@ -40,6 +42,10 @@ The live site does **server-tries-first, 1-click-fallback-on-BLOCKED**:
    bar (typing `javascript:` first) or console. The script then walks the
    steps on the user's IP and reports the result back to History.
 
+A Tampermonkey userscript (`bypass.user.js`, served at `/bypass.user.js`) is
+also offered: install once, then links bypass themselves. But it opens as raw
+JS text for users without Tampermonkey — confusing, not production worthy.
+
 Why this is **not ideal / not production worthy**:
 
 - **Two-step UX for 100% of Render users.** The server path never succeeds
@@ -48,26 +54,54 @@ Why this is **not ideal / not production worthy**:
 - **Pasting `javascript:` URLs is hostile UX.** Most users have never opened
   DevTools. Mobile browsers make this actively painful (address-bar JS is
   stripped, consoles don't exist). Expect massive drop-off.
+- **Tampermonkey install is a funnel killer.** Store → extension → back to
+  site → click install → accept permissions: each step loses users. And
+  without Tampermonkey the `.user.js` link shows raw code — looks broken.
 - **A second tab breaks the magic.** Paste → spinner → "now go over there and
   do this" feels broken, even with numbered steps. The product promise is
   "paste link, get link" and we don't deliver it.
 - **No batch story.** The old 5-link parallel design is UI-complete but
   pointless while the server can't run a single job.
-- **Fragile coupling.** The snippet duplicates the step logic in a second
-  codebase (`bookmarklet.js` vs `worker.py`) — every site change must be
-  fixed twice.
+- **Fragile coupling.** The step logic now lives in three places
+  (`worker.py` vs `bookmarklet.js` vs `bypass.user.js`) — every site change
+  must be fixed three times.
 
 ## 4. What "ideal" actually looks like
 
 - **If budget appears:** set `PROXY_URL` in Render env. Delete the fallback
   UI. Paste → spinner (~1 min) → result. Done. The hook is already coded.
-- **If staying free:** a one-time-install **browser extension** (paste works
+- **If staying free:** a one-time-install **browser extension** (content
+  scripts auto-run on match — no Tampermonkey, no raw-JS page; paste works
   forever after install), or accept the site as a **guided-manual tool**
   rather than an automation product.
 - **Either way:** the server Playwright stack (`worker.py`, gunicorn threads,
   Chromium on 512MB RAM) should be revisited — it is heavy, slow, and
   currently serves only blocked requests.
 
+## 5. Why the NovelApp pattern can't transfer here
+
+NovelApp's TV scraper works because it is a **native Android app**: its Kotlin
+code creates a real `WebView` **on the user's own phone**, loads the video
+embed **from the user's IP**, watches `onLoadResource` / console messages for
+`.m3u8` URLs, and hands the stream back. Residential IP comes free — the code
+runs where the user is.
+
+None of that transfers to this project:
+
+- A "small node.js file on Render" still executes **on Render's server**, so
+  requests leave from the **datacenter IP** — same 403. Node vs Python changes
+  nothing; the block checks *where you connect from*, not *what language you
+  connect with*.
+- The WebView trick requires a **native container** (Android app, browser
+  extension content script, Electron wrapper) with privileges to load and read
+  third-party pages. A website cannot do it: same-origin policy forbids our
+  page from reading linkshortx.in, and no `<script>` tag on our domain can
+  reach into their tab.
+- The web equivalent of "the app's own WebView" is a **browser extension
+  content script** — which is exactly the §4 recommendation. There is no
+  website-only version of it.
+
 ---
 *Written 2026-09-13. Revisit when proxy budget exists or the shortener lifts
 the datacenter block.*
+

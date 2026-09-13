@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><style>
+body{width:300px;margin:0;font-family:'Segoe UI',system-ui,Arial,sans-serif;color:#16213a}
+.head{background:linear-gradient(135deg,#1a56db,#0f3aa8);color:#fff;padding:16px;text-align:center}
+.head h1{margin:0;font-size:1.05rem}
+.head p{margin:6px 0 0;font-size:.8rem;color:#dbe7ff}
+.body{padding:14px}
+input{width:100%;box-sizing:border-box;padding:10px 12px;border:2px solid #d7e3fb;border-radius:10px;font-size:.85rem}
+input:focus{outline:none;border-color:#1a56db}
+button{width:100%;margin-top:10px;border:none;cursor:pointer;font-weight:700;border-radius:10px;padding:11px;font-size:.95rem;background:#1a56db;color:#fff}
+button:disabled{opacity:.6;cursor:wait}
+.status{font-size:.82rem;color:#5b6b8c;margin-top:10px;min-height:20px}
+.status.done{color:#15803d}
+.status.failed{color:#b42323}
+.result{word-break:break-all;font-size:.8rem;margin-top:8px}
+.result a{color:#0f3aa8}
+.row{display:flex;gap:8px;margin-top:8px}
+.row button,.row a{flex:1;margin-top:0;text-align:center;text-decoration:none;font-size:.82rem;padding:9px}
+.row a{background:#e3ebfd;color:#1a56db;border-radius:10px;font-weight:700}
+.foot{text-align:center;font-size:.72rem;color:#5b6b8c;padding:0 14px 14px}
+.foot a{color:#1a56db}
+</style></head>
+<body>
+<div class="head"><h1>\uD83D\uDD17 LinkBypassor</h1><p>Paste link \u2192 open \u2192 magic \u2728</p></div>
+<div class="body">
+<input id="url" type="url" placeholder="https://linkshortx.in/XXXXXX" />
+<button id="go">Bypass</button>
+<p class="status" id="st">Paste a short link above.</p>
+<div class="result" id="res"></div>
+<div class="row" id="acts" style="display:none">
+<button id="cp">\uD83D\uDCCB Copy</button>
+<a id="op" href="#" target="_blank" rel="noopener">\uD83D\uDD17 Open</a>
+</div>
+</div>
+<p class="foot">Full history on <a href="https://linkbypassor.onrender.com#history" target="_blank" rel="noopener">linkbypassor.onrender.com</a><br/>by Ozegbe Mike Isioma</p>
+<script src="popup.js"></script>
+</body>
+</html>
