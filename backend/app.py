@@ -93,6 +93,11 @@ def history():
     return jsonify({"device_id": did, "jobs": list_jobs(did)})
 
 
+@app.get("/googlea03eddeedac715ac.html")
+def google_verify():
+    return send_from_directory(STATIC_DIR, "googlea03eddeedac715ac.html", mimetype="text/html")
+
+
 @app.get("/")
 def index():
     return send_from_directory(STATIC_DIR, "index.html")
