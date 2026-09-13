@@ -1,6 +1,6 @@
 /* Paste-link UX. Server tries first; if the network blocks the server
    (BLOCKED error), the row auto-switches to 1-click on-device mode. */
-const API = "";
+const API = window.LB_API_BASE || "";
 const MAX_ROWS = 5;
 const POLL_MS = 4000;
 function deviceId() {

@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from .db import create_job, ensure_device, get_job, init_db, list_jobs, update_job
+from .db import _connect, create_job, ensure_device, get_job, init_db, list_jobs, update_job
 from .worker import run_bypass
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -15,6 +15,71 @@ STATIC_DIR = os.path.join(BASE_DIR, "static")
 app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="")
 executor = ThreadPoolExecutor(max_workers=int(os.environ.get("MAX_WORKERS", "3")))
 init_db()
+
+def _claim_next_job():
+    """Atomically claim the oldest queued job (mark as running)."""
+    conn = _connect()
+    row = conn.execute(
+        "SELECT * FROM jobs WHERE status='queued' ORDER BY created_at ASC LIMIT 1"
+    ).fetchone()
+    if not row:
+        conn.close()
+        return None
+    jid = row["id"]
+    now = int(time.time())
+    conn.execute(
+        "UPDATE jobs SET status='running', progress='Claimed by worker...', updated_at=? WHERE id=? AND status='queued'",
+        (now, jid),
+    )
+    conn.commit()
+    confirmed = conn.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone()
+    conn.close()
+    if confirmed and confirmed["status"] == "running":
+        return dict(confirmed)
+    return None
+
+
+def _background_worker():
+    """Poll for queued jobs and run bypass. Runs on the laptop (residential IP)."""
+    import time as _time
+    print("[worker] background thread started", flush=True)
+    while True:
+        try:
+            job = _claim_next_job()
+            if not job:
+                _time.sleep(3)
+                continue
+            jid = job["id"]
+            short_url = job["short_url"]
+            print(f"[worker] claimed job {jid} ({short_url})", flush=True)
+            _run_job(jid, short_url)
+        except Exception as e:
+            print(f"[worker] error: {str(e)[:200]}", flush=True)
+            _time.sleep(5)
+
+
+def start_worker_if_enabled():
+    """Start the background worker thread if enabled."""
+    import time as _time
+    if os.environ.get("WORKER_ENABLED", "true").lower() in ("1", "true", "yes"):
+        t = threading.Thread(target=_background_worker, daemon=True)
+        t.start()
+        print("[worker] enabled", flush=True)
+    else:
+        print("[worker] disabled (UI-only mode)", flush=True)
+
+
+@app.get("/api/worker/status")
+def worker_status():
+    enabled = os.environ.get("WORKER_ENABLED", "true").lower() in ("1", "true", "yes")
+    conn = _connect()
+    queued = conn.execute("SELECT COUNT(*) FROM jobs WHERE status='queued'").fetchone()[0]
+    running = conn.execute("SELECT COUNT(*) FROM jobs WHERE status='running'").fetchone()[0]
+    conn.close()
+    return jsonify({"enabled": enabled, "queued": int(queued), "running": int(running)})
+
+
+
 
 
 @app.after_request
@@ -243,6 +308,12 @@ def google_verify():
 @app.get("/")
 def index():
     return send_from_directory(STATIC_DIR, "index.html")
+
+
+    start_worker_if_enabled()
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port)
+
 
 
 if __name__ == "__main__":
