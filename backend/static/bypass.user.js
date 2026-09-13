@@ -130,22 +130,32 @@
     }
     if (!btn) { say('Get Link never enabled - reload and try again'); return; }
     say('opening your link...');
+    /* Hardened gateway capture: hook window.open BEFORE clicking, since the
+       interstitial may open the gateway in a new tab (target=_blank). In that
+       case location.href never changes here, so without the hook the result
+       would never reach History. */
+    var openedUrl = null;
+    var origOpen = null;
     try {
-      var gw0 = null;
-      var seen = function (e) {
-        try {
-          var u = (e && e.url) || '';
-          if (u.indexOf('/links/gw/') > -1) gw0 = u;
-        } catch (x) {}
+      origOpen = window.open;
+      window.open = function (url) {
+        try { openedUrl = String(url || ''); } catch (e) {}
+        return origOpen.apply(window, arguments);
       };
-      /* best-effort gateway capture via performance entries after click */
+    } catch (e) {}
+    try {
       btn.click();
       var t1 = Date.now();
-      var gw = gw0, tg = null;
+      var gw = null, tg = null;
       while (Date.now() - t1 < 30000) {
         var u = location.href;
         if (u.indexOf('/links/gw/') > -1) gw = u;
         if (/telegram\.me|t\.me\//.test(u)) { tg = u; break; }
+        /* new-tab case: gateway/telegram URL captured via the open hook */
+        if (openedUrl) {
+          if (openedUrl.indexOf('/links/gw/') > -1) gw = openedUrl;
+          if (/telegram\.me|t\.me\//.test(openedUrl)) { tg = openedUrl; break; }
+        }
         try {
           var entries = performance.getEntriesByType('resource') || [];
           for (var i = 0; i < entries.length; i++) {
@@ -157,13 +167,20 @@
       if (tg || gw) {
         say('done!');
         report(shortUrl, tg || gw, gw);
-        /* if the click didn't navigate us (target=_blank), go there ourselves */
-        if (!tg || location.href === u) { await sleep(400); }
-        if (tg && location.href !== tg) location.href = tg;
+        /* same-tab click that didn't navigate us yet (or hook-only capture):
+           take this tab there ourselves so the user isn't stranded. */
+        var dest = tg || gw;
+        if (dest && location.href !== dest) {
+          await sleep(400);
+          if (location.href !== dest) location.href = dest;
+        }
       } else {
         say('link opened in a new tab - check your tabs!');
       }
     } catch (e) { say('error: ' + (e && e.message || e)); }
+    finally {
+      try { if (origOpen) window.open = origOpen; } catch (e) {}
+    }
   }
   function route() {
     var host = location.hostname.replace(/^www\./, '');
