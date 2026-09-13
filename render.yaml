@@ -16,3 +16,14 @@ services:
         value: 2
       - key: DB_PATH
         value: /opt/render/project/src/data/jobs.db
+      # --- Worker Bridge (GitHub Actions, free Azure runners) ---
+      # Set these in the Render dashboard (NOT in git). Until set, the app
+      # falls back to local Playwright.
+      - key: GH_REPO
+        sync: false
+      - key: GH_TOKEN
+        sync: false
+      - key: BRIDGE_SECRET
+        generateValue: true
+      - key: RENDER_URL
+        value: https://linkbypassor.onrender.com

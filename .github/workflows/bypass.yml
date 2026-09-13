@@ -1,0 +1,33 @@
+name: LinkBypassor remote worker
+
+# Triggered by the Render backend via repository_dispatch (see backend/bridge.py).
+# Runs the Playwright bypass on GitHub's Azure runners (free, unblocked IPs)
+# and POSTs the result back to Render's /api/bridge/result webhook.
+
+on:
+  repository_dispatch:
+    types: [bypass-link]
+
+permissions:
+  contents: read
+
+jobs:
+  bypass:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Run bypass
+        env:
+          PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: python bridge/run_remote.py "$PAYLOAD"

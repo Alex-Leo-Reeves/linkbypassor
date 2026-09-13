@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, jsonify, request, send_from_directory
 
+from .bridge import bridge_configured, dispatch_bypass
 from .db import create_job, ensure_device, get_job, init_db, list_jobs, update_job
 from .worker import run_bypass
 
@@ -42,7 +43,20 @@ def _run_job(jid, short_url):
     def prog(msg):
         update_job(jid, status="running", progress=msg)
 
-    update_job(jid, status="running", progress="Starting...")
+    # Strategy order (all server-side, zero user steps):
+    #  1. GitHub Actions worker (Azure IPs, free) - primary when configured.
+    #  2. Local Playwright (works wherever the host IP is accepted).
+    # The curl_cffi probe lives in backend/curl_path.py for the interstitial
+    # research track; the Playwright path already covers the full chain.
+    if bridge_configured():
+        update_job(jid, status="running", progress="Starting remote worker...")
+        ok, msg = dispatch_bypass(jid, short_url, (get_job(jid) or {}).get("device_id", ""))
+        if ok:
+            update_job(jid, status="running", progress="Remote worker started (free Azure runner)...")
+            return
+        update_job(jid, status="running", progress=f"Remote dispatch failed ({msg}); trying local browser...")
+    else:
+        update_job(jid, status="running", progress="Starting...")
     try:
         result = asyncio.run(run_bypass(short_url, progress_cb=prog))
         telegram = result.get("telegram") or result.get("final_url")
@@ -107,6 +121,34 @@ def history():
         return jsonify({"device_id": None, "jobs": []})
     ensure_device(did)
     return jsonify({"device_id": did, "jobs": list_jobs(did)})
+
+
+@app.route("/api/bridge/result", methods=["POST", "OPTIONS"])
+def bridge_result():
+    """Webhook: GitHub Actions worker posts the bypass result here.
+    Signed with BRIDGE_SECRET so random callers can't forge completions."""
+    if request.method == "OPTIONS":
+        return ("", 204)
+    data = request.get_json(silent=True) or {}
+    secret = (data.get("bridge_secret") or "").strip()
+    expected = (os.environ.get("BRIDGE_SECRET") or "").strip()
+    if not expected or secret != expected:
+        return jsonify({"error": "unauthorized"}), 401
+    jid = (data.get("job_id") or "").strip()
+    job = get_job(jid) if jid else None
+    if not job:
+        return jsonify({"error": "job not found"}), 404
+    status = data.get("status") or "failed"
+    update_job(
+        jid,
+        status="done" if status == "done" else "failed",
+        progress=data.get("progress") or ("Done!" if status == "done" else "Failed"),
+        gateway=data.get("gateway"),
+        telegram=data.get("telegram"),
+        final_url=data.get("final_url"),
+        error=data.get("error"),
+    )
+    return jsonify({"ok": True, "job": get_job(jid)})
 
 
 @app.post("/api/report")
