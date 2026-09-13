@@ -14,43 +14,8 @@ from playwright.async_api import async_playwright
 
 DWELL = 6  # seconds per step page; minimum proven ~3s, 6s = safe margin
 
-_browsers_ready = False
-
-
-def _ensure_browsers():
-    """Self-heal: if the Playwright browser binary is missing (e.g. Render
-    reused a cached build env and skipped the install step), install it at
-    runtime on first job. No-op when browsers already exist."""
-    global _browsers_ready
-    if _browsers_ready:
-        return
-    import shutil
-    import subprocess
-
-    from playwright.sync_api import sync_playwright
-
-    try:
-        with sync_playwright() as pw:
-            exe = pw.chromium.executable_path
-            if os.path.exists(exe):
-                try:
-                    full = os.path.join(os.path.dirname(os.path.dirname(exe)), "chrome-linux", "chrome")
-                    print(f"[worker] playwright exe={exe} full_build={full} exists={os.path.exists(full)}", flush=True)
-                except Exception:
-                    pass
-                _browsers_ready = True
-                return
-    except Exception as e:
-        print(f"[worker] exe check failed: {e}", flush=True)
-    if shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome"):
-        _browsers_ready = True
-        return
-    subprocess.run(["python", "-m", "playwright", "install", "chromium"], check=False, timeout=300)
-    _browsers_ready = True
-
 
 async def _new_page(pw):
-    _ensure_browsers()
     launch_kw = {
         "headless": True,
         "args": [

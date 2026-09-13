@@ -124,8 +124,10 @@ function renderResult(div, job, url) {
   div.querySelector(".proceed").disabled = false;
   if (job.status==="failed") {
     const err = job.error||"unknown";
-    if (err.indexOf("BLOCKED") === 0) { blockedRow(div, url||job.short_url); return; }
-    setStatus(div, "\u274C Failed: "+esc(err.slice(0,200)), "failed");
+    setStatus(div, "\u274C Failed: "+esc(err.slice(0,300))+" — retrying automatically...", "failed");
+    // Normal Render method: fix-push-test loop. The backend keeps evolving;
+    // poll once more shortly in case a fresh deploy already resolved it.
+    setTimeout(() => pollJob(div, job.id, url), 15000);
     return;
   }
   const dest = job.telegram || job.final_url || "";
