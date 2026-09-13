@@ -17,6 +17,22 @@ executor = ThreadPoolExecutor(max_workers=int(os.environ.get("MAX_WORKERS", "3")
 init_db()
 
 
+@app.after_request
+def _cors(resp):
+    # Lets the on-device userscript/bookmarklet POST /api/report from
+    # linkshortx.in / hindisink.com via plain fetch (belt: GM_xmlhttpRequest
+    # in the userscript bypasses CORS anyway; this is the suspenders).
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Device-Id"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return resp
+
+
+@app.route("/api/report", methods=["OPTIONS"])
+def _report_preflight():
+    return ("", 204)
+
+
 def device_id_from_request():
     did = request.headers.get("X-Device-Id", "") or (request.get_json(silent=True) or {}).get("device_id", "")
     return ensure_device(did)
@@ -115,6 +131,15 @@ def report():
         final_url=final_url or None,
     )
     return jsonify({"device_id": did, "job": get_job(job["id"])})
+
+
+@app.get("/bypass.user.js")
+def userscript():
+    # Served with a JS content-type + suggestive filename so Tampermonkey
+    # offers a 1-click Install screen when users hit the install button.
+    resp = send_from_directory(STATIC_DIR, "bypass.user.js", mimetype="application/javascript")
+    resp.headers["Content-Disposition"] = "inline; filename=linkbypassor.user.js"
+    return resp
 
 
 @app.get("/googlea03eddeedac715ac.html")
