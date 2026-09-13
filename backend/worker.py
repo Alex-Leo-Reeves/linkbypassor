@@ -26,9 +26,10 @@ async def _new_page(pw):
             "--disable-blink-features=AutomationControlled",
         ],
     }
-    # Full chromium is REQUIRED - the headless-shell stub cannot run the JS
-    # redirect chain (strands on linkshortx.in, no navigation). Fail loud
-    # instead of silently falling back to a browser that can't do the job.
+    # Browser resolution order: full chromium channel -> system chrome ->
+    # default headless shell. The shell can't run the JS redirect chain, but
+    # refusing to launch hides the real error; the STUCK diagnostics below
+    # report exactly where navigation died instead.
     exe = pw.chromium.executable_path
     full = os.path.join(os.path.dirname(os.path.dirname(exe)), "chrome-linux", "chrome")
     sys_chrome = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
@@ -39,7 +40,7 @@ async def _new_page(pw):
         launch_kw["executable_path"] = sys_chrome
         print(f"[worker] using system chrome at {sys_chrome}", flush=True)
     else:
-        raise RuntimeError(f"full chromium missing (looked for {full}); refusing headless-shell fallback")
+        print(f"[worker] full chromium missing at {full}; falling back to headless shell", flush=True)
     # Optional residential proxy for datacenter-IP blocks (Issue 2).
     # Set PROXY_URL env var if the site serves Render IPs a block page.
     proxy_url = os.environ.get("PROXY_URL", "").strip()
