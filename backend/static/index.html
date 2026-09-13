@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LinkBypassor — Skip the wait, get your link</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="nav">
+  <div class="nav-inner">
+    <div class="logo">🔗 LinkBypassor</div>
+    <nav><a href="#how">How it works</a><a href="#bypass">Bypass</a><a href="#history">History</a></nav>
+  </div>
+</header>
+<section class="hero">
+  <div class="hero-inner">
+    <h1>Skip the 4-step wait.<br />Get your real link.</h1>
+    <p class="sub">Paste a LinkShortX link. We click through the verification steps, countdowns and interstitial for you — then hand you the gateway + Telegram link.</p>
+    <div class="hero-cta"><a href="#bypass" class="btn btn-white">Bypass a link ↓</a><a href="#how" class="btn btn-ghost">How it works</a></div>
+    <div class="hero-badges"><span>⏱ ~5 min per link</span><span>📦 up to 5 at once</span><span>💾 auto-saved history</span></div>
+  </div>
+  <div class="wave"></div>
+</section>
+<section id="how" class="section">
+  <h2>What the LinkBypassor does</h2>
+  <div class="cards">
+    <div class="card"><div class="step">1</div><h3>Paste your short link</h3><p>Any <code>linkshortx.in/XXXXXX</code> link. No account, no extension needed.</p></div>
+    <div class="card"><div class="step">2</div><h3>We do the 4 verification steps</h3><p>Our server opens a real browser, clicks <b>Verify → Continue → Go to step N</b> through all 4 advertiser pages for you.</p></div>
+    <div class="card"><div class="step">3</div><h3>We clear the interstitial</h3><p>Back on LinkShortX we wait out the 5-second countdown and press <b>Get Link</b> to mint your <code>/links/gw/…</code> gateway URL.</p></div>
+    <div class="card"><div class="step">4</div><h3>You get the Telegram link</h3><p>The gateway resolves to your final destination (usually a Telegram bot). Copy it or open it — done.</p></div>
+  </div>
+  <div class="note">⏳ Each run takes about <b>4–5 minutes</b> (four ~30s countdowns + timers). Start it, go make tea, come back — your result is saved on <b>this device</b> even if you close the tab.</div>
+</section>
+<section id="bypass" class="section section-alt">
+  <h2>Paste your link(s)</h2>
+  <p class="muted">Add up to 5 links. Hit <b>Proceed</b> per link, or <b>Batch process</b> to run them all in parallel.</p>
+  <div id="rows"></div>
+  <div class="row-actions">
+    <button id="addLink" class="btn btn-green">+ Add link</button>
+    <button id="batchBtn" class="btn btn-blue">⚡ Batch process all</button>
+  </div>
+</section>
+<section id="history" class="section">
+  <h2>Your link history <span class="pill">saved on this device</span></h2>
+  <p class="muted">Close the browser, forget about it, come back in 5 minutes — everything is here.</p>
+  <div class="history-actions"><button id="refreshHistory" class="btn btn-small">↻ Refresh</button><button id="clearLocal" class="btn btn-small btn-danger">Clear local view</button></div>
+  <div id="historyList" class="history-list"><p class="muted">No links yet. Bypass something above 👆</p></div>
+</section>
+<footer class="footer">LinkBypassor · runs the boring clicks so you don't have to 💙</footer>
+<script src="app.js"></script>
+</body>
+</html>

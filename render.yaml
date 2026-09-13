@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: linkbypass
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt && python -m playwright install chromium --with-deps"
+    startCommand: "gunicorn backend.app:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 600"
+    envVars:
+      - key: MAX_WORKERS
+        value: 3
+      - key: DB_PATH
+        value: /opt/render/project/src/data/jobs.db
