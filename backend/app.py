@@ -96,9 +96,37 @@ def _run_job(jid, short_url):
         update_job(jid, status="failed", progress="Failed", error=str(e)[:1000])
 
 
-@app.get("/api/health")
-def health():
-    return jsonify({"ok": True})
+@app.route("/api/probe")
+def probe():
+    """Diagnostics: test outbound IPv4 vs IPv6 + Cloudflare Worker candidate info."""
+    import subprocess
+    short = "https://linkshortx.in/5kST8sz"
+    results = {}
+    try:
+        r = subprocess.run(
+            ["curl", "-4", "-s", "-o", "/dev/null", "-w", "%{http_code} %{redirect_url}",
+             "--max-time", "15", short],
+            capture_output=True, text=True, timeout=20
+        )
+        results["ipv4"] = r.stdout.strip()
+    except Exception as e:
+        results["ipv4"] = f"ERR {str(e)[:80]}"
+    try:
+        r = subprocess.run(
+            ["curl", "-6", "-s", "-o", "/dev/null", "-w", "%{http_code} %{redirect_url}",
+             "--max-time", "15", short],
+            capture_output=True, text=True, timeout=20
+        )
+        results["ipv6"] = r.stdout.strip()
+    except Exception as e:
+        results["ipv6"] = f"ERR {str(e)[:80]}"
+    return jsonify({
+        "results": results,
+        "host": os.environ.get("HOSTNAME", "unknown"),
+        "render_region": os.environ.get("RENDER_REGION", "unknown"),
+        "note": "200/307 = clean; 403 = datacenter block"
+    })
+
 
 
 @app.post("/api/jobs")
