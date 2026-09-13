@@ -93,6 +93,30 @@ def history():
     return jsonify({"device_id": did, "jobs": list_jobs(did)})
 
 
+@app.post("/api/report")
+def report():
+    """Bookmarklet hook: the on-device script found the final link (using the
+    user's residential IP) and reports it so it lands in device history."""
+    data = request.get_json(silent=True) or {}
+    short_url = (data.get("short_url") or "").strip()
+    telegram = (data.get("telegram") or "").strip()
+    gateway = (data.get("gateway") or "").strip()
+    final_url = (data.get("final_url") or telegram or "").strip()
+    if not short_url.startswith("http") or not (telegram or gateway):
+        return jsonify({"error": "short_url + telegram/gateway required"}), 400
+    did = device_id_from_request()
+    job = create_job(did, short_url)
+    update_job(
+        job["id"],
+        status="done",
+        progress="Done via 1-click bypass!",
+        gateway=gateway or None,
+        telegram=telegram or None,
+        final_url=final_url or None,
+    )
+    return jsonify({"device_id": did, "job": get_job(job["id"])})
+
+
 @app.get("/googlea03eddeedac715ac.html")
 def google_verify():
     return send_from_directory(STATIC_DIR, "googlea03eddeedac715ac.html", mimetype="text/html")
