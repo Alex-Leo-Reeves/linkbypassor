@@ -36,25 +36,18 @@
   <div class="note">⚡ Each run takes about <b>1 minute</b>. Hit Proceed, hold on while the spinner works — your result <b>pops in automatically</b> the second it's ready, and it's saved on <b>this device</b> even if you close the tab.</div>
 </section>
 <section id="bypass" class="section section-alt">
-  <h2>⚡ 1-click bypass</h2>
-  <p class="muted">The bypass runs <b>on your device, on your internet</b> — that's what beats the block page. Two ways to run it:</p>
-  <div class="cards">
-    <div class="card">
-      <div class="step">A</div>
-      <h3>Drag-to-install button (easiest)</h3>
-      <p>Drag this button to your bookmarks bar. Then open any short link and click the bookmark:</p>
-      <p style="margin-top:10px"><a id="bmBtn" class="btn btn-green" href="#" title="Drag me to your bookmarks bar">⚡ Bypass This Page</a></p>
-      <p class="muted" style="font-size:.82rem">Desktop Chrome/Edge/Firefox: <b>Ctrl+Shift+B</b> shows the bookmarks bar.</p>
-    </div>
-    <div class="card">
-      <div class="step">B</div>
-      <h3>Console paste (mobile / no bookmarks bar)</h3>
-      <p>Open the short link, paste this snippet in DevTools console (or address bar with <code>javascript:</code>), hit Enter:</p>
-      <p style="margin-top:10px"><button id="copyBm" class="btn btn-blue">📋 Copy bypass snippet</button></p>
-    </div>
+  <h2>Paste your link(s)</h2>
+  <p class="muted">Paste up to 5 links. Hit <b>Bypass</b> per link, or <b>Bypass all</b> to run them together. Your result appears below automatically.</p>
+  <div id="rows"></div>
+  <div class="row-actions">
+    <button id="addLink" class="btn btn-green">+ Add link</button>
+    <button id="batchBtn" class="btn btn-blue">⚡ Bypass all</button>
   </div>
-  <div class="note">
-    <b>How to use:</b> ① open your <code>linkshortx.in/XXXXXX</code> link in a tab ② click the bookmark (or paste the snippet) ③ a blue pill appears up top — hold on ~1 min while it walks the 4 steps + Get Link ④ you land on your Telegram link, and it's saved in <a href="#history">History</a> below.
+  <div id="oneClickHelp" class="note" style="display:none;margin-top:16px">
+    <b>⚡ 1-click fix (30 seconds, once):</b> this network is blocking our server, so finish it on your own internet —
+    ① <button id="copyBm2" class="btn btn-small">📋 Copy 1-click code</button>
+    ② open your short link in a new tab ③ paste the code in the address bar (type <code>javascript:</code> first) or console, hit Enter.
+    The bypass runs in that tab and your result lands in <a href="#history">History</a> below.
   </div>
 </section>
 <section id="history" class="section">
@@ -77,7 +70,6 @@
   </div>
   <p class="footer-tag">LinkBypassor · runs the boring clicks so you don't have to 💙</p>
 </footer>
-<script src="install.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

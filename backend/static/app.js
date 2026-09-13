@@ -1,12 +1,12 @@
-/* Device id: stable per browser, stored in localStorage (no login needed).
-   Server (SQLite) is source of truth. Polling auto-detects completion -
-   the moment a job flips to done/failed the result renders itself. */
+/* Paste-link UX. Server tries first; if the network blocks the server
+   (BLOCKED error), the row auto-switches to 1-click on-device mode. */
 const API = "";
 const MAX_ROWS = 5;
 const POLL_MS = 4000;
 function deviceId() {
-  let id = localStorage.getItem("lb_device_id");
-  if (!id) { id = "dev-" + Math.random().toString(36).slice(2,10) + Date.now().toString(36); localStorage.setItem("lb_device_id", id); }
+  let id = null;
+  try { id = localStorage.getItem("lb_device_id"); } catch (e) {}
+  if (!id) { id = "dev-" + Math.random().toString(36).slice(2,10) + Date.now().toString(36); try { localStorage.setItem("lb_device_id", id); } catch (e) {} }
   return id;
 }
 function headers(extra) { return Object.assign({"Content-Type":"application/json","X-Device-Id":deviceId()}, extra||{}); }
@@ -18,19 +18,25 @@ function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;"
 function copyText(t, btn) { navigator.clipboard.writeText(t).then(()=>{ const o=btn.textContent; btn.textContent="Copied \u2713"; setTimeout(()=>btn.textContent=o,1500); }); }
 const rowsEl = document.getElementById("rows");
 let pollers = {};
+let bmCode = null;
+fetch("bookmarklet.js", { cache: "no-store" }).then(function (r) { return r.text(); }).then(function (c) {
+  bmCode = c;
+  const b2 = document.getElementById("copyBm2");
+  if (b2) b2.onclick = function () { copyText(bmCode, b2); };
+}).catch(function () {});
 function addRow(prefill) {
-  if (rowsEl.children.length >= MAX_ROWS) { alert("Max "+MAX_ROWS+" links. Hit Batch process to run them together."); return; }
+  if (rowsEl.children.length >= MAX_ROWS) { alert("Max "+MAX_ROWS+" links. Hit Bypass all to run them together."); return; }
   const div = document.createElement("div");
   div.className = "link-row";
   const inp = document.createElement("input");
   inp.type = "url"; inp.placeholder = "https://linkshortx.in/XXXXXX"; inp.value = prefill||"";
   const go = document.createElement("button");
-  go.className = "btn btn-blue proceed"; go.textContent = "Proceed";
+  go.className = "btn btn-blue proceed"; go.textContent = "Bypass";
   const del = document.createElement("button");
   del.className = "remove-row"; del.title = "Remove"; del.textContent = "\u2715";
   const top = document.createElement("div"); top.className = "row-top";
   top.appendChild(inp); top.appendChild(go); top.appendChild(del);
-  const st = document.createElement("p"); st.className = "status"; st.textContent = "Idle \u2014 paste a link and hit Proceed (or Batch process below).";
+  const st = document.createElement("p"); st.className = "status"; st.textContent = "Idle \u2014 paste a link and hit Bypass.";
   div.appendChild(top); div.appendChild(st);
   del.onclick = () => { if (div.dataset.job) clearInterval(pollers[div.dataset.job]); div.remove(); };
   go.onclick = () => startSingle(div, go);
@@ -48,6 +54,17 @@ function showSpinner(div, progressMsg) {
   if (progressMsg) w.querySelector(".spinner-sub").textContent = progressMsg;
 }
 function hideSpinner(div) { const w = div.querySelector(".spinner-wrap"); if (w) w.remove(); }
+function showOneClick(url) {
+  const help = document.getElementById("oneClickHelp");
+  if (help) help.style.display = "block";
+  if (url) {
+    try {
+      const pend = JSON.parse(localStorage.getItem("lb_pending")||"[]");
+      if (!pend.includes(url)) pend.unshift(url);
+      localStorage.setItem("lb_pending", JSON.stringify(pend.slice(0,20)));
+    } catch (e) {}
+  }
+}
 async function startJobRequest(url) {
   const r = await fetch(API+"/api/jobs", {method:"POST", headers:headers(), body:JSON.stringify({short_url:url})});
   const data = await r.json();
@@ -59,28 +76,58 @@ async function startSingle(div, btn) {
   const url = div.querySelector("input").value.trim();
   if (!url.startsWith("http")) return alert("Paste a valid http(s) link first.");
   btn.disabled = true;
-  div.querySelector(".result-box")?.remove?.();
+  const old = div.querySelector(".result-box"); if (old && old.remove) old.remove();
   try {
     const job = await startJobRequest(url);
     div.dataset.job = job.id;
-    setStatus(div, "Job started \u2014 working on your link now.");
+    setStatus(div, "Working on your link now \u2014 hold on...");
     showSpinner(div, "Opening short link...");
-    pollers[job.id] = setInterval(()=>pollJob(div, job.id), POLL_MS);
-    pollJob(div, job.id);
+    pollers[job.id] = setInterval(()=>pollJob(div, job.id, url), POLL_MS);
+    pollJob(div, job.id, url);
   } catch(e){ setStatus(div, "\u274C "+esc(e.message), "failed"); btn.disabled = false; }
 }
-async function pollJob(div, jid) {
+async function pollJob(div, jid, url) {
   try {
     const r = await fetch(API+"/api/jobs/"+jid, {headers:headers()});
     const d = await r.json(); const job = d.job;
     if (!job) return;
-    if (job.status==="done"||job.status==="failed") { clearInterval(pollers[jid]); hideSpinner(div); renderResult(div, job); loadHistory(); }
+    if (job.status==="done"||job.status==="failed") { clearInterval(pollers[jid]); hideSpinner(div); renderResult(div, job, url); loadHistory(); }
     else showSpinner(div, job.progress||"Working...");
   } catch(e){}
 }
-function renderResult(div, job) {
+function blockedRow(div, url) {
+  /* Server IP is blocked: flip this row into 1-click mode automatically. */
+  setStatus(div, "\u26A0\uFE0F Our server is blocked on this network — <b>1-click fix:</b> finishing on your internet instead.", "failed");
+  showOneClick(url);
+  let box = div.querySelector(".oneclick-box");
+  if (!box) {
+    box = document.createElement("div");
+    box.className = "result-box oneclick-box";
+    const ol = document.createElement("ol");
+    ol.style.cssText = "margin:6px 0 6px 18px;padding:0;font-size:.9rem";
+    const li1 = document.createElement("li"); li1.textContent = "Tap below to copy the 1-click code";
+    const li2 = document.createElement("li");
+    const open = document.createElement("a"); open.href = url; open.target = "_blank"; open.rel = "noopener"; open.textContent = "Open your short link in a new tab";
+    li2.appendChild(open);
+    const li3 = document.createElement("li"); li3.textContent = "Paste the code in the address bar (type javascript: first) or console, hit Enter — done in ~1 min";
+    ol.appendChild(li1); ol.appendChild(li2); ol.appendChild(li3);
+    const acts = document.createElement("div"); acts.className = "result-actions";
+    const cp = document.createElement("button"); cp.className = "btn btn-small copy1"; cp.textContent = "\uD83D\uDCCB Copy 1-click code";
+    const op = document.createElement("a"); op.className = "btn btn-small open1"; op.href = url; op.target = "_blank"; op.rel = "noopener"; op.textContent = "\uD83D\uDD17 Open short link";
+    cp.onclick = () => { if (bmCode) copyText(bmCode, cp); else alert("Code still loading — wait 5s and retry."); };
+    acts.appendChild(cp); acts.appendChild(op);
+    box.appendChild(ol); box.appendChild(acts);
+    div.appendChild(box);
+  }
+}
+function renderResult(div, job, url) {
   div.querySelector(".proceed").disabled = false;
-  if (job.status==="failed") { setStatus(div, "\u274C Failed: "+esc((job.error||"unknown").slice(0,200)), "failed"); return; }
+  if (job.status==="failed") {
+    const err = job.error||"unknown";
+    if (err.indexOf("BLOCKED") === 0) { blockedRow(div, url||job.short_url); return; }
+    setStatus(div, "\u274C Failed: "+esc(err.slice(0,200)), "failed");
+    return;
+  }
   const dest = job.telegram || job.final_url || "";
   if (!dest) { setStatus(div, "\u26A0\uFE0F Finished but no link was captured. Try again.", "failed"); return; }
   setStatus(div, "\u2705 <b>Done! Your link is ready:</b>", "done");
@@ -94,11 +141,10 @@ function renderResult(div, job) {
   cp.onclick = ()=>copyText(dest, cp);
   acts.appendChild(cp); acts.appendChild(op);
   box.appendChild(label); box.appendChild(a); box.appendChild(acts);
-  div.querySelector(".result-box")?.remove?.();
+  const old = div.querySelector(".result-box"); if (old && old.remove) old.remove();
   div.appendChild(box);
   box.scrollIntoView({behavior:"smooth", block:"nearest"});
 }
-/* ---------- batch ---------- */
 document.getElementById("batchBtn").onclick = async (e) => {
   const btn = e.target;
   const rows = Array.from(rowsEl.querySelectorAll(".link-row"));
@@ -113,24 +159,23 @@ document.getElementById("batchBtn").onclick = async (e) => {
       rememberJob(job);
       const div = rows[i]; if (!div) return;
       div.dataset.job = job.id;
-      div.querySelector(".result-box")?.remove?.();
-      setStatus(div, "Batch started \u2014 working on your link now.");
+      const old = div.querySelector(".result-box"); if (old && old.remove) old.remove();
+      setStatus(div, "Working on your link now \u2014 hold on...");
       showSpinner(div, "Queued...");
-      pollers[job.id] = setInterval(()=>pollJob(div, job.id), POLL_MS);
-      pollJob(div, job.id);
+      pollers[job.id] = setInterval(()=>pollJob(div, job.id, job.short_url), POLL_MS);
+      pollJob(div, job.id, job.short_url);
     });
   } catch(err){ alert(err.message); }
   btn.disabled = false;
 };
 document.getElementById("addLink").onclick = ()=>addRow();
-/* ---------- history (auto-updates; unfinished jobs keep polling) ---------- */
 async function loadHistory() {
   const list = document.getElementById("historyList");
   try {
     const r = await fetch(API+"/api/history", {headers:headers()});
     const d = await r.json(); const jobs = d.jobs||[];
-    if (!jobs.length) { list.innerHTML = ""; const p=document.createElement("p"); p.className="muted"; p.textContent="No links yet. Bypass something above \uD83D\uDC46"; list.appendChild(p); return; }
     list.innerHTML = "";
+    if (!jobs.length) { const p=document.createElement("p"); p.className="muted"; p.textContent="No links yet. Bypass something above \uD83D\uDC46"; list.appendChild(p); return; }
     jobs.forEach((j)=>{
       const dest = j.telegram || j.final_url || "";
       const card = document.createElement("div");
@@ -154,6 +199,10 @@ async function loadHistory() {
         spin.innerHTML = '<div class="spinner"></div><div><div class="spinner-text">Please hold on\u2026</div><div class="spinner-sub"></div></div>';
         spin.querySelector(".spinner-sub").textContent = j.progress||"Working...";
         card.appendChild(spin);
+      } else if ((j.error||"").indexOf("BLOCKED") === 0) {
+        const m2 = document.createElement("div"); m2.className="meta";
+        m2.innerHTML = "\u26A0\uFE0F Server blocked — use the <b>1-click fix</b> in the bypass section above.";
+        card.appendChild(m2);
       } else {
         const m2 = document.createElement("div"); m2.className="meta"; m2.textContent="\u274C "+(j.error||"Failed").slice(0,200);
         card.appendChild(m2);

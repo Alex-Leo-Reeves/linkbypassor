@@ -190,6 +190,11 @@ async def run_bypass(short_url: str, progress_cb=None):
             # page (needs PROXY_URL) from an empty shell (browser problem).
             print(f"[worker] STUCK url={page.url[:160]} html_len={html_len} title={title[:120]}", flush=True)
             print(f"[worker] STUCK head={html_head[:500]!r} chain={resp_chain[-5:]!r}", flush=True)
+            if "access denied" in title.lower() or "access denied" in (html_head or "").lower():
+                raise RuntimeError(
+                    "BLOCKED: linkshortx served this server an Access Denied page "
+                    "(datacenter IP). Use 1-click on-device bypass instead."
+                )
             raise RuntimeError(f"Step 1: no form rendered (url={page.url[:120]}, html_len={html_len})")
         await asyncio.sleep(2)
 
