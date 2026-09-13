@@ -44,10 +44,39 @@ def _run_job(jid, short_url):
         update_job(jid, status="running", progress=msg)
 
     # Strategy order (all server-side, zero user steps):
-    #  1. GitHub Actions worker (Azure IPs, free) - primary when configured.
-    #  2. Local Playwright (works wherever the host IP is accepted).
-    # The curl_cffi probe lives in backend/curl_path.py for the interstitial
-    # research track; the Playwright path already covers the full chain.
+    #  0. curl_cffi HTTP fast path (no browser, ~40s): TLS-spoofed entry +
+    #     token POSTs for steps 1-3, then hands step-4/interstitial to the
+    #     browser. Falls through on any HTTP-* error.
+    #  1. GitHub Actions worker (Azure IPs, free) - when configured.
+    #  2. Local Playwright full chain (works wherever the host IP passes).
+    update_job(jid, status="running", progress="Starting...")
+    try:
+        from .curl_path import run_curl_bypass
+
+        try:
+            prog("Trying HTTP fast path...")
+            curl_res = run_curl_bypass(short_url, progress_cb=prog)
+        except Exception as e:
+            msg = str(e)
+            if msg.startswith("HTTP-"):
+                prog(f"Fast path skipped ({msg}); using browser...")
+                curl_res = None
+            else:
+                raise
+        if curl_res and curl_res.get("telegram"):
+            tg = curl_res["telegram"]
+            update_job(
+                jid, status="done", progress="Done!",
+                gateway=curl_res.get("gateway"), telegram=tg,
+                final_url=curl_res.get("final_url") or tg,
+            )
+            return
+        if curl_res:
+            prog(f"Fast path done through step 3 ({curl_res.get('final_href', '')[:60]}); browser takes step 4...")
+    except Exception as e:
+        # curl_cffi missing or unexpected bug: don't kill the job, fall through.
+        if "HTTP-" not in str(e)[:6]:
+            prog(f"Fast path unavailable ({str(e)[:120]}); using browser...")
     if bridge_configured():
         update_job(jid, status="running", progress="Starting remote worker...")
         ok, msg = dispatch_bypass(jid, short_url, (get_job(jid) or {}).get("device_id", ""))
@@ -55,8 +84,6 @@ def _run_job(jid, short_url):
             update_job(jid, status="running", progress="Remote worker started (free Azure runner)...")
             return
         update_job(jid, status="running", progress=f"Remote dispatch failed ({msg}); trying local browser...")
-    else:
-        update_job(jid, status="running", progress="Starting...")
     try:
         result = asyncio.run(run_bypass(short_url, progress_cb=prog))
         telegram = result.get("telegram") or result.get("final_url")
