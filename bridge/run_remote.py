@@ -25,6 +25,12 @@ def post_result(callback_url: str, body: dict):
 
 async def _run(short_url: str, progress):
     # Import here so `python -m py_compile` on Render (no playwright) still works.
+    # run_remote.py executes as a plain script, so the repo root must be on
+    # sys.path for the `backend` package import to resolve.
+    import os
+    import sys as _sys
+
+    _sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from backend.worker import run_bypass
 
     return await run_bypass(short_url, progress_cb=progress)
