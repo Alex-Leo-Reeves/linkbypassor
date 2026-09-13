@@ -47,6 +47,10 @@ def _ensure_browsers():
 async def _new_page(pw):
     _ensure_browsers()
     launch_kw = {
+        # channel="chromium" forces the FULL chromium build instead of the
+        # headless-shell stub - headless shell cannot run the JS redirect
+        # chain (strands on linkshortx.in with a 1430-byte shell, no nav).
+        "channel": "chromium",
         "headless": True,
         "args": [
             "--no-sandbox",
@@ -54,7 +58,6 @@ async def _new_page(pw):
             "--disable-dev-shm-usage",
             "--disable-gpu",
             "--disable-blink-features=AutomationControlled",
-            "--disable-features=Lockdown",
         ],
     }
     import shutil
