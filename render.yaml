@@ -3,13 +3,11 @@ services:
     name: linkbypass
     runtime: python
     plan: free
-    buildCommand: "PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/.playwright-browsers pip install -r requirements.txt && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/.playwright-browsers python -m playwright install --with-deps chromium && echo BUILD_BROWSERS && ls /opt/render/project/src/.playwright-browsers/ && ls /opt/render/project/src/.playwright-browsers/chromium-*/ 2>/dev/null | head -n 5"
+    buildCommand: "pip install -r requirements.txt && python -m playwright install --with-deps chromium && echo BUILD_BROWSERS && ls /opt/render/.cache/ms-playwright/ 2>/dev/null || ls ~/.cache/ms-playwright/ 2>/dev/null || echo NO_CACHE_DIR"
     startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 600"
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
-      - key: PLAYWRIGHT_BROWSERS_PATH
-        value: /opt/render/project/src/.playwright-browsers
       - key: PLAYWRIGHT_CHROMIUM_USE_HEADLESS_NEW
         value: 1
       - key: MAX_WORKERS

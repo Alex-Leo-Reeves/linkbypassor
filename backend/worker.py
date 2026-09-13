@@ -4,11 +4,6 @@ The server enforces ONE thing: ~3s+ dwell per step page before submitting
 (submit faster -> next page renders 'link expired'). 6s dwell passes cleanly."""
 import asyncio
 import os
-import shutil
-
-# Force the Render install location BEFORE playwright resolves anything.
-# render.yaml sets this too, but yaml env has been ignored before - code wins.
-os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/render/project/src/.playwright-browsers")
 
 from playwright.async_api import async_playwright
 
@@ -26,40 +21,24 @@ async def _new_page(pw):
             "--disable-blink-features=AutomationControlled",
         ],
     }
-    # Browser resolution order: full chromium channel -> system chrome ->
-    # default headless shell. The shell can't run the JS redirect chain, but
-    # refusing to launch hides the real error; the STUCK diagnostics below
-    # report exactly where navigation died instead.
-    exe = pw.chromium.executable_path
-    full = os.path.join(os.path.dirname(os.path.dirname(exe)), "chrome-linux", "chrome")
-    sys_chrome = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
-    if os.path.exists(full):
-        launch_kw["channel"] = "chromium"
-        print("[worker] using full chromium channel", flush=True)
-    elif sys_chrome:
-        launch_kw["executable_path"] = sys_chrome
-        print(f"[worker] using system chrome at {sys_chrome}", flush=True)
-    else:
-        print(f"[worker] full chromium missing at {full}; falling back to headless shell", flush=True)
-    # Optional residential proxy for datacenter-IP blocks (Issue 2).
+    # Browser launch: NO channel/executable overrides. Stock playwright resolves
+    # its own binary (headless shell on Render) and launches it. Custom
+    # overrides were the #1 source of 'Executable doesn't exist' crashes
+    # across environments, so we launch exactly once, with no probing.
+    print(f"[worker] playwright exe={pw.chromium.executable_path}", flush=True)
+    # Optional residential proxy for datacenter-IP blocks.
     # Set PROXY_URL env var if the site serves Render IPs a block page.
     proxy_url = os.environ.get("PROXY_URL", "").strip()
+    ctx_kw = {
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        "viewport": {"width": 1366, "height": 900},
+        "locale": "en-US",
+    }
     if proxy_url:
         print("[worker] using proxy", flush=True)
-        b = await pw.chromium.launch(**launch_kw)
-        ctx = await b.new_context(
-            proxy={"server": proxy_url},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-            viewport={"width": 1366, "height": 900},
-            locale="en-US",
-        )
-    else:
-        b = await pw.chromium.launch(**launch_kw)
-        ctx = await b.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-            viewport={"width": 1366, "height": 900},
-            locale="en-US",
-        )
+        ctx_kw["proxy"] = {"server": proxy_url}
+    b = await pw.chromium.launch(**launch_kw)
+    ctx = await b.new_context(**ctx_kw)
     await ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
     page = await ctx.new_page()
     # NOTE: no request-route blocking. An earlier version aborted gpt/ads.js
