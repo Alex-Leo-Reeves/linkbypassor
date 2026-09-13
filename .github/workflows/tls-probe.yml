@@ -1,0 +1,36 @@
+name: TLS probe (curl_cffi from blocked IP)
+
+# Manual diagnostic: tests whether Chrome-impersonated TLS gets past the
+# linkshortx WAF from GitHub's Azure IPs (same datacenter class as Render).
+# Trigger: Actions tab -> "TLS probe" -> Run workflow.
+# No changes to the live app; results print in the run log.
+
+on:
+  workflow_dispatch:
+    inputs:
+      short_url:
+        description: "Short link to probe"
+        default: "https://linkshortx.in/5kST8sz"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install curl_cffi
+        run: pip install curl_cffi==0.13.0
+
+      - name: Probe WAF with spoofed TLS
+        env:
+          SHORT_URL: ${{ inputs.short_url }}
+        run: python bridge/tls_probe.py "$SHORT_URL"
