@@ -136,13 +136,21 @@ async def run_bypass(short_url: str, progress_cb=None):
                 pass
             await asyncio.sleep(1)
         # wait for the step page to actually render its form (slow free-tier loads)
+        reached = None
         for _ in range(30):
             try:
                 if await page.locator("#fwd").count() > 0 or await page.locator("#go").count() > 0:
+                    reached = page.url
                     break
             except Exception:
                 pass
             await asyncio.sleep(1)
+        if reached is None:
+            try:
+                html_len = await page.evaluate("document.documentElement.outerHTML.length")
+            except Exception:
+                html_len = -1
+            raise RuntimeError(f"Step 1: no form rendered (url={page.url[:120]}, html_len={html_len})")
         await asyncio.sleep(2)
 
         for i in [1, 2, 3]:
