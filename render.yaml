@@ -3,12 +3,14 @@ services:
     name: linkbypass
     runtime: python
     plan: free
-    buildCommand: "pip install -r requirements.txt && python -m playwright install chromium && python -m playwright install-deps chromium || true"
+    buildCommand: "pip install -r requirements.txt && python -m playwright install --with-deps chromium"
     startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 600"
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /opt/render/project/src/.playwright-browsers
       - key: MAX_WORKERS
-        value: 3
+        value: 2
       - key: DB_PATH
         value: /opt/render/project/src/data/jobs.db
