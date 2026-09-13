@@ -9,8 +9,8 @@ from playwright.async_api import async_playwright
 
 DWELL = 6  # seconds per step page; minimum proven ~3s, 6s = safe margin
 
-BLOCKED = ("googlesyndication", "doubleclick", "/gpt/", "google-analytics",
-           "googletagmanager", "facebook.net", "/ads.js")
+BLOCKED = ("googlesyndication", "doubleclick", "google-analytics",
+           "googletagmanager", "facebook.net")
 
 _browsers_ready = False
 
@@ -74,7 +74,10 @@ async def _new_page(pw):
     async def _route(r):
         try:
             url = r.request.url
-            if r.request.resource_type in ("image", "media", "font") or any(d in url for d in BLOCKED):
+            # NOTE: do NOT block gpt/ads.js/images - the q7m4vk29 -> google ->
+            # article redirect chain depends on them; blocking strands us on
+            # linkshortx.in with a 1430-byte shell. Only cut pure trackers.
+            if r.request.resource_type == "font" or any(d in url for d in BLOCKED):
                 await r.abort()
             else:
                 await r.continue_()
