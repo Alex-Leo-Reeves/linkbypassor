@@ -12,9 +12,47 @@ DWELL = 6  # seconds per step page; minimum proven ~3s, 6s = safe margin
 BLOCKED = ("googlesyndication", "doubleclick", "/gpt/", "google-analytics",
            "googletagmanager", "facebook.net", "/ads.js")
 
+_browsers_ready = False
+
+
+def _ensure_browsers():
+    """Self-heal: if the Playwright browser binary is missing (e.g. Render
+    reused a cached build env and skipped the install step), install it at
+    runtime on first job. No-op when browsers already exist."""
+    global _browsers_ready
+    if _browsers_ready:
+        return
+    import shutil
+    import subprocess
+
+    from playwright.sync_api import sync_playwright
+
+    try:
+        with sync_playwright() as pw:
+            exe = pw.chromium.executable_path
+            import os
+
+            if os.path.exists(exe):
+                _browsers_ready = True
+                return
+    except Exception:
+        pass
+    if shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome"):
+        _browsers_ready = True
+        return
+    subprocess.run(["python", "-m", "playwright", "install", "chromium"], check=False, timeout=300)
+    _browsers_ready = True
+
 
 async def _new_page(pw):
-    b = await pw.chromium.launch(headless=True, args=["--no-sandbox", "--disable-blink-features=AutomationControlled"])
+    _ensure_browsers()
+    launch_kw = {"headless": True, "args": ["--no-sandbox", "--disable-blink-features=AutomationControlled"]}
+    import shutil
+
+    sys_chrome = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
+    if sys_chrome:
+        launch_kw["executable_path"] = sys_chrome
+    b = await pw.chromium.launch(**launch_kw)
     ctx = await b.new_context(
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
         viewport={"width": 1366, "height": 900},
