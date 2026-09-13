@@ -3,7 +3,7 @@ services:
     name: linkbypass
     runtime: python
     plan: free
-    buildCommand: "pip install -r requirements.txt && python -m playwright install --with-deps chromium && echo BUILD_BROWSERS && ls /opt/render/.cache/ms-playwright/ 2>/dev/null || ls ~/.cache/ms-playwright/ 2>/dev/null || echo NO_CACHE_DIR"
+    buildCommand: "pip install -r requirements.txt && python -m playwright install --with-deps chromium chromium-headless-shell && echo BUILD_BROWSERS && (ls /opt/render/.cache/ms-playwright/ 2>/dev/null || ls ~/.cache/ms-playwright/ 2>/dev/null || echo NO_CACHE_DIR)"
     startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 600"
     envVars:
       - key: PYTHON_VERSION
