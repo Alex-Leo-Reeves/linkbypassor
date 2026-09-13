@@ -33,10 +33,15 @@ def _ensure_browsers():
             import os
 
             if os.path.exists(exe):
+                try:
+                    full = os.path.join(os.path.dirname(os.path.dirname(exe)), "chrome-linux", "chrome")
+                    print(f"[worker] playwright exe={exe} exists={os.path.exists(exe)} full_build={full} exists={os.path.exists(full)}", flush=True)
+                except Exception:
+                    pass
                 _browsers_ready = True
                 return
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[worker] exe check failed: {e}", flush=True)
     if shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome"):
         _browsers_ready = True
         return
@@ -50,7 +55,7 @@ async def _new_page(pw):
         # channel="chromium" forces the FULL chromium build instead of the
         # headless-shell stub - headless shell cannot run the JS redirect
         # chain (strands on linkshortx.in with a 1430-byte shell, no nav).
-        "channel": "chromium",
+        # Falls back to default headless shell if full chromium is missing.
         "headless": True,
         "args": [
             "--no-sandbox",
@@ -60,6 +65,21 @@ async def _new_page(pw):
             "--disable-blink-features=AutomationControlled",
         ],
     }
+    import os
+
+    try:
+        from playwright.sync_api import sync_playwright as _spw
+
+        with _spw() as _pw:
+            _exe = _pw.chromium.executable_path
+            _full = os.path.join(os.path.dirname(os.path.dirname(_exe)), "chrome-linux", "chrome")
+            if os.path.exists(_full):
+                launch_kw["channel"] = "chromium"
+                print("[worker] using full chromium channel", flush=True)
+            else:
+                print(f"[worker] full chromium missing at {_full}, using headless shell", flush=True)
+    except Exception as _e:
+        print(f"[worker] channel probe failed: {_e}", flush=True)
     import shutil
 
     sys_chrome = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
