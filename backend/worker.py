@@ -46,7 +46,17 @@ def _ensure_browsers():
 
 async def _new_page(pw):
     _ensure_browsers()
-    launch_kw = {"headless": True, "args": ["--no-sandbox", "--disable-blink-features=AutomationControlled"]}
+    launch_kw = {
+        "headless": True,
+        "args": [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-blink-features=AutomationControlled",
+            "--disable-features=Lockdown",
+        ],
+    }
     import shutil
 
     sys_chrome = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
