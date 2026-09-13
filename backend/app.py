@@ -77,7 +77,9 @@ def _run_job(jid, short_url):
         return
     if curl_res:
         prog(f"Fast path through step 3 ({(curl_res.get('final_href') or '')[:60]}); browser takes step 4...")
-    # Strategy 1: local Playwright full chain.
+    # Strategy 1: local Playwright full chain. The browser binary path is
+    # pinned at build time (render.yaml) + forced in worker.py; if the host
+    # IP is blocked the worker raises HTTP-403 and the job fails honestly.
     try:
         result = asyncio.run(run_bypass(short_url, progress_cb=prog))
         telegram = result.get("telegram") or result.get("final_url")

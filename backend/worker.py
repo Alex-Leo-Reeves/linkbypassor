@@ -157,10 +157,10 @@ async def run_bypass(short_url: str, progress_cb=None):
             print(f"[worker] STUCK url={page.url[:160]} html_len={html_len} title={title[:120]}", flush=True)
             print(f"[worker] STUCK head={html_head[:500]!r} chain={resp_chain[-5:]!r}", flush=True)
             if "access denied" in title.lower() or "access denied" in (html_head or "").lower():
-                raise RuntimeError(
-                    "BLOCKED: linkshortx served this server an Access Denied page "
-                    "(datacenter IP). Use 1-click on-device bypass instead."
-                )
+                # Last-resort free path: re-fetch the step chain server-side
+                # through a residential-egress public proxy is out of scope;
+                # mark clearly so the UI can route to on-device instead.
+                raise RuntimeError("HTTP-403")
             raise RuntimeError(f"Step 1: no form rendered (url={page.url[:120]}, html_len={html_len})")
         await asyncio.sleep(2)
 
