@@ -6,8 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from .db import _connect, create_job, ensure_device, get_job, init_db, list_jobs, update_job
-from .worker import run_bypass
+from db import _connect, create_job, ensure_device, get_job, init_db, list_jobs, update_job
+from worker import run_bypass
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
@@ -15,6 +15,10 @@ STATIC_DIR = os.path.join(BASE_DIR, "static")
 app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="")
 executor = ThreadPoolExecutor(max_workers=int(os.environ.get("MAX_WORKERS", "3")))
 init_db()
+
+@app.route("/api/health")
+def health():
+    return jsonify({"ok": True})
 
 def _claim_next_job():
     """Atomically claim the oldest queued job (mark as running)."""
@@ -120,7 +124,7 @@ def _run_job(jid, short_url):
     # A non-HTTP exception (missing lib, bug) is also non-fatal: fall through.
     curl_res = None
     try:
-        from .curl_path import run_curl_bypass
+        from curl_path import run_curl_bypass
 
         try:
             prog("Trying HTTP fast path...")

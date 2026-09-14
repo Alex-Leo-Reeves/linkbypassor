@@ -89,11 +89,22 @@ async function startSingle(div, btn) {
 async function pollJob(div, jid, url) {
   try {
     const r = await fetch(API+"/api/jobs/"+jid, {headers:headers()});
+    const ct = r.headers.get("content-type") || "";
+    if (!ct.includes("application/json")) {
+      clearInterval(pollers[jid]);
+      hideSpinner(div);
+      setStatus(div, '⚠️ ngrok interstitial received. <a href="'+API+'" target="_blank" rel="noopener" style="color:#60a5fa">Click here to trust this ngrok URL</a>, then try again.', "failed");
+      return;
+    }
     const d = await r.json(); const job = d.job;
     if (!job) return;
     if (job.status==="done"||job.status==="failed") { clearInterval(pollers[jid]); hideSpinner(div); renderResult(div, job, url); loadHistory(); }
     else showSpinner(div, job.progress||"Working...");
-  } catch(e){}
+  } catch(e) {
+    clearInterval(pollers[jid]);
+    hideSpinner(div);
+    setStatus(div, "Error contacting server: " + (e.message || "network error"), "failed");
+  }
 }
 function blockedRow(div, url) {
   /* Server IP is blocked: flip this row into 1-click mode automatically. */
@@ -217,9 +228,11 @@ async function loadHistory() {
 async function pollHistoryJob(jid) {
   try {
     const r = await fetch(API+"/api/jobs/"+jid, {headers:headers()});
+    const ct = r.headers.get("content-type") || "";
+    if (!ct.includes("application/json")) { clearInterval(pollers["h_"+jid]); return; }
     const d = await r.json();
     if (d.job && (d.job.status==="done"||d.job.status==="failed")) { clearInterval(pollers["h_"+jid]); loadHistory(); }
-  } catch(e){}
+  } catch(e){ clearInterval(pollers["h_"+jid]); }
 }
 document.getElementById("refreshHistory").onclick = loadHistory;
 document.getElementById("clearLocal").onclick = ()=>{ localStorage.removeItem("lb_jobs"); alert("Local view cleared. Server history for this device is kept \u2014 hit Refresh to reload it."); };
