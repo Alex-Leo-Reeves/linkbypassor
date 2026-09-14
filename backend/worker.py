@@ -58,6 +58,82 @@ async def _wait_fwd(page, timeout=20):
     return False
 
 
+async def _run_funnel_flow(page, prog, b):
+    """Handle the HindiSink 'safety checker' funnel flow (NEW) co-existing with old steps.
+
+    New flow (observed Sep 2026):
+    1. short link -> 307 -> hindisink.com/link-checker/?f=1
+    2. page shows #funnel-open ("Open link") button
+    3. clicking it fires POST/GET link-checker/api.php
+    4. api.php JSON contains input_url/final_url = telegram destination
+    5. page UI does NOT navigate itself -> worker returns the API destination
+
+    Old 4-step flow (#fwd x3 + #final + interstitial) is untouched in run_bypass.
+    """
+    result_data = {"telegram": None, "gateway": None, "final_url": None}
+
+    async def on_api(r):
+        try:
+            if "api.php" not in r.url or r.status != 200:
+                return
+            try:
+                body = await r.json()
+            except Exception:
+                return
+            if not isinstance(body, dict) or not body.get("ok"):
+                return
+            dest = body.get("input_url") or body.get("final_url")
+            if dest and str(dest).startswith("http"):
+                result_data["telegram"] = dest
+                result_data["final_url"] = dest
+            for hop in body.get("redirect_chain", []) or []:
+                hu = (hop or {}).get("url", "")
+                if "/links/gw/" in hu:
+                    result_data["gateway"] = hu
+                if "telegram" in hu and not result_data.get("telegram"):
+                    result_data["telegram"] = hu
+        except Exception:
+            pass
+
+    page.on("response", on_api)
+
+    prog("Clicking 'Open link' to start verification...")
+    try:
+        await page.wait_for_selector("#funnel-open", timeout=15000)
+        await page.click("#funnel-open", timeout=10000)
+    except Exception as e:
+        raise RuntimeError(f"Funnel button click failed: {e}")
+
+    prog("Verification in progress (scanning link safety)...")
+    for _ in range(45):
+        if result_data.get("telegram"):
+            break
+        await asyncio.sleep(1)
+
+    if not result_data.get("telegram"):
+        # fallback: destination may already be embedded in the page/boot state
+        try:
+            cand = await page.evaluate("""() => {
+                const m = document.documentElement.outerHTML.match(/https:\/\/telegram\.me\/[^"'\\s<>]+/);
+                return m ? m[0] : null;
+            }""")
+            if cand:
+                result_data["telegram"] = cand
+                result_data["final_url"] = cand
+        except Exception:
+            pass
+
+    if not result_data.get("telegram"):
+        raise RuntimeError("Funnel scan finished but no destination URL was returned")
+
+    telegram = result_data["telegram"]
+    gateway = result_data["gateway"]
+    final = telegram or result_data["final_url"] or page.url
+
+    await b.close()
+    prog("Done!")
+    return {"gateway": gateway, "telegram": telegram, "final_url": final}
+
 async def run_bypass(short_url: str, progress_cb=None):
     def prog(msg):
         if progress_cb:
@@ -112,17 +188,27 @@ async def run_bypass(short_url: str, progress_cb=None):
             except Exception:
                 pass
             await asyncio.sleep(1)
-        # wait for the step page to actually render its form (slow free-tier loads)
+        # wait for EITHER flow to render: old steps (#fwd/#go) or new funnel (#funnel-open).
+        # Combined loop (old code checked steps for 30s THEN funnel once -> funnel jobs
+        # wasted a minute and could mis-fire). Both flows co-exist; branch on sight.
         reached = None
+        saw_funnel = False
         for _ in range(30):
             try:
                 if await page.locator("#fwd").count() > 0 or await page.locator("#go").count() > 0:
                     reached = page.url
                     break
+                if await page.locator("#funnel-open").count() > 0:
+                    saw_funnel = True
+                    break
             except Exception:
                 pass
             await asyncio.sleep(1)
+        if reached is None and saw_funnel:
+            prog("New flow detected: safety checker funnel...")
+            return await _run_funnel_flow(page, prog, b)
         if reached is None:
+
             try:
                 html_len = await page.evaluate("document.documentElement.outerHTML.length")
                 html_head = await page.evaluate("document.documentElement.outerHTML.slice(0, 600)")
