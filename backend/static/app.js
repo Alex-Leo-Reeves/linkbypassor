@@ -186,6 +186,15 @@ async function loadHistory() {
   const list = document.getElementById("historyList");
   try {
     const r = await fetch(API+"/api/history", {headers:headers()});
+    const ct = r.headers.get("content-type") || "";
+    if (!ct.includes("application/json")) {
+      list.innerHTML = "";
+      const p=document.createElement("p");
+      p.className="muted";
+      p.innerHTML='ngrok interstitial received. <a href="'+API+'" target="_blank" rel="noopener" style="color:#60a5fa">Click here to trust</a>, then refresh.';
+      list.appendChild(p);
+      return;
+    }
     const d = await r.json(); const jobs = d.jobs||[];
     list.innerHTML = "";
     if (!jobs.length) { const p=document.createElement("p"); p.className="muted"; p.textContent="No links yet. Bypass something above \uD83D\uDC46"; list.appendChild(p); return; }
