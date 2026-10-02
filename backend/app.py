@@ -92,7 +92,11 @@ def _cors(resp):
     # linkshortx.in / hindisink.com via plain fetch (belt: GM_xmlhttpRequest
     # in the userscript bypasses CORS anyway; this is the suspenders).
     resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Device-Id"
+    # ngrok-skip-browser-warning: lets the Render UI (a different origin) call
+    # the laptop API through the ngrok tunnel without hitting ngrok's free-tier
+    # browser-warning interstitial (ERR_NGROK_6024). Must be whitelisted here or
+    # the CORS preflight for GET requests is rejected by the browser.
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Device-Id, ngrok-skip-browser-warning"
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return resp
 

@@ -9,7 +9,7 @@ function deviceId() {
   if (!id) { id = "dev-" + Math.random().toString(36).slice(2,10) + Date.now().toString(36); try { localStorage.setItem("lb_device_id", id); } catch (e) {} }
   return id;
 }
-function headers(extra) { return Object.assign({"Content-Type":"application/json","X-Device-Id":deviceId()}, extra||{}); }
+function headers(extra) { return Object.assign({"Content-Type":"application/json","X-Device-Id":deviceId(),"ngrok-skip-browser-warning":"true"}, extra||{}); }
 function rememberJob(job) {
   try { const ids = JSON.parse(localStorage.getItem("lb_jobs")||"[]"); if (!ids.includes(job.id)) ids.unshift(job.id); localStorage.setItem("lb_jobs", JSON.stringify(ids.slice(0,100))); } catch(e){}
 }
