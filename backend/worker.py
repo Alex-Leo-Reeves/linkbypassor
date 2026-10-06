@@ -10,6 +10,9 @@ from playwright.async_api import async_playwright
 DWELL = 6  # seconds per step page; minimum proven ~3s, 6s = safe margin
 
 
+ADHOSTS = ("yanvik", "doubleclick", "googlesyndication", "adtrafficquality", "sodar", "safeframe", "fundingchoices")
+
+
 async def _new_page(pw):
     launch_kw = {
         "headless": True,
@@ -40,7 +43,39 @@ async def _new_page(pw):
     b = await pw.chromium.launch(**launch_kw)
     ctx = await b.new_context(**ctx_kw)
     await ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
+    # Headless tabs report visibilityState=hidden, which FREEZES the step
+    # countdown/hold timers (the page checks `visible` every tick). Spoof the
+    # tab as visible + focused so timers run in headless like a real tab.
+    await ctx.add_init_script("Object.defineProperty(document,'visibilityState',{get:()=> 'visible',configurable:true}); Object.defineProperty(document,'hidden',{get:()=>false,configurable:true}); window.blurred=false; document.hasFocus=()=>true; document.addEventListener('visibilitychange',function(e){e.stopImmediatePropagation();},true);")
+    # Ad-hijack guard: block off-site DOCUMENT navigations (the loan-ad domain
+    # steals the main frame after form submits). Subresource loads are left
+    # alone - the entry redirect chain needs its scripts. Only hindisink,
+    # linkshortx and google document navigations are allowed through.
+    async def _guard_nav(r):
+        try:
+            req = r.request
+            u = (req.url or "").lower()
+            if req.resource_type == "document" and req.is_navigation_request():
+                if u.startswith("about:") or u.startswith("data:"):
+                    await r.continue_()
+                    return
+                if "hindisink.com" in u or "linkshortx.in" in u or "google.com" in u:
+                    await r.continue_()
+                    return
+                print(f"[worker] blocked off-site nav: {u[:150]}", flush=True)
+                await r.abort()
+                return
+        except Exception:
+            pass
+        try:
+            await r.continue_()
+        except Exception:
+            pass
     page = await ctx.new_page()
+    try:
+        await ctx.route("**/*", _guard_nav)
+    except Exception:
+        pass
     # NOTE: no request-route blocking. An earlier version aborted gpt/ads.js
     # and images to save time, but the q7m4vk29 -> google -> article redirect
     # chain depends on them - blocking strands us on linkshortx.in.
@@ -56,6 +91,70 @@ async def _wait_fwd(page, timeout=20):
             pass
         await asyncio.sleep(1)
     return False
+
+
+async def _click_reveal(page, tag):
+    """NEW step UI: click #go (verify) -> wait countdown -> click #cont -> wait hold.
+    Returns True once #pDone is visible (i.e. #fwd may be submitted).
+    Panels reveal in stages: pCont shows first, then pHold AFTER #cont click,
+    then pDone AFTER the 5s hold. Never wait on pHold/pDone before clicking cont.
+    NOTE: #go starts DISABLED ("Loading...") until ads render (~2.5s+). Always
+    wait for it to enable before clicking - an early click is swallowed and the
+    countdown never starts.
+    """
+    try:
+        await page.wait_for_function("document.getElementById('go') && !document.getElementById('go').disabled", timeout=20000)
+    except Exception:
+        try:
+            st = await page.evaluate("document.getElementById('go') ? document.getElementById('go').textContent : 'NO GO'")
+        except Exception:
+            st = "?"
+        print("[worker] REVEAL go never enabled " + tag + " (" + str(st)[:40] + ")", flush=True)
+        return False
+    try:
+        await page.click("#go", timeout=8000)
+    except Exception:
+        print("[worker] REVEAL fail go click " + tag, flush=True)
+        return False
+    # Stage 1: countdown finishes -> ONLY pCont visible. Click cont promptly
+    # (the button may re-hide or the token may expire if left sitting).
+    saw_cont = False
+    for _ in range(60):
+        await asyncio.sleep(1)
+        try:
+            vis = await page.evaluate("document.getElementById('pCont') ? !document.getElementById('pCont').classList.contains('x') : true")
+            if vis:
+                saw_cont = True
+                break
+        except Exception:
+            pass
+    if not saw_cont:
+        print("[worker] REVEAL fail pCont " + tag, flush=True)
+        return False
+    # Click cont IMMEDIATELY in-page (same tick as detection). Playwright's
+    # actionability checks (scroll/overlay wait) cost seconds during which the
+    # button can re-hide; a direct DOM click fires the one-time listener now.
+    try:
+        await page.evaluate("document.getElementById('cont').click()")
+    except Exception:
+        try:
+            await page.click("#cont", timeout=5000)
+        except Exception:
+            print("[worker] REVEAL fail cont click " + tag, flush=True)
+            return False
+    # Stage 2: 5s hold runs -> pDone visible. Wait ONLY for pDone now.
+    for _ in range(25):
+        await asyncio.sleep(1)
+        try:
+            vis = await page.evaluate("document.getElementById('pDone') ? !document.getElementById('pDone').classList.contains('x') : true")
+            if vis:
+                break
+        except Exception:
+            pass
+    else:
+        print("[worker] REVEAL fail pDone " + tag, flush=True)
+        return False
+    return True
 
 
 async def _run_funnel_flow(page, prog, b):
@@ -113,13 +212,16 @@ async def _run_funnel_flow(page, prog, b):
     if not result_data.get("telegram"):
         # fallback: destination may already be embedded in the page/boot state
         try:
-            cand = await page.evaluate("""() => {
-                const m = document.documentElement.outerHTML.match(/https:\/\/telegram\.me\/[^"'\\s<>]+/);
-                return m ? m[0] : null;
-            }""")
-            if cand:
-                result_data["telegram"] = cand
-                result_data["final_url"] = cand
+            html = await page.content()
+            idx = html.find("telegram.me")
+            if idx > 0:
+                s = html.rfind("https://", 0, idx)
+                e = s
+                while e < len(html) and html[e] not in ('"', chr(39), chr(60), chr(32)): e += 1
+                cand = html[s:e]
+                if cand.startswith("https://"):
+                    result_data["telegram"] = cand
+                    result_data["final_url"] = cand
         except Exception:
             pass
 
@@ -180,11 +282,16 @@ async def run_bypass(short_url: str, progress_cb=None):
             pass  # google interstitial / slow load - URL still lands, keep going
         # the short link bounces: linkshortx -> q7m4vk29.php -> google -> article.
         # wait until we reach a hindisink article (or timeout after ~30s).
-        for _ in range(30):
+        # NOTE: both hosts now front a JS challenge ("Checking your browser").
+        # It self-solves in a real browser (~10-20s); NEVER treat its page as
+        # a step page - wait it out, it navigates onward by itself.
+        for _ in range(45):
             try:
                 url = page.url
+                ttl = await page.title()
                 if "hindisink.com" in url and "q7m4vk29" not in url and "google.com" not in url:
-                    break
+                    if "checking your browser" not in (ttl or "").lower() and "just a moment" not in (ttl or "").lower():
+                        break
             except Exception:
                 pass
             await asyncio.sleep(1)
@@ -237,13 +344,99 @@ async def run_bypass(short_url: str, progress_cb=None):
                 if not await _wait_fwd(page, timeout=20):
                     raise RuntimeError(f"Step {i}: verification form not found (link may have expired)")
             await page.evaluate("document.getElementById('hsg')?.remove();document.documentElement.style.overflow='';")
-            await asyncio.sleep(DWELL)
+            # NEW step UI: #fwd exists from page load but the server only accepts
+            # the token AFTER the go->cont reveal (countdown + 5s hold). Clicking
+            # through first is what makes the submit valid; zero extra dwell.
+            # Never hard-fail on UI state: if the reveal stalls (backgrounded
+            # tab, one-shot listeners), submit anyway and let the SERVER decide
+            # (a bad token lands on a fresh step page = retried, not fatal).
+            ok_reveal = await _click_reveal(page, f"step{i}")
+            if not ok_reveal:
+                print(f"[worker] step{i}: reveal stalled, submitting anyway (server decides)", flush=True)
+            try:
+                n = await page.locator("#fwd").count()
+            except Exception:
+                n = 0
+            if not n:
+                # reveal re-rendered the page (new token); re-wait for fresh #fwd
+                if not await _wait_fwd(page, timeout=20):
+                    raise RuntimeError(f"Step {i}: verification form not found (link may have expired)")
             await page.evaluate("document.getElementById('fwd').submit()")
             try:
                 await page.wait_for_load_state("domcontentloaded", timeout=20000)
             except Exception:
                 pass
             await asyncio.sleep(3)
+            try:
+                au = page.url
+                at = await page.title()
+                af = await page.locator("#fwd").count()
+            except Exception:
+                au = "?"; at = "?"; af = -1
+            print(f"[worker] step{i} done -> url={au[:120]} title={at[:60]} fwd={af}", flush=True)
+            # Vignette/ad guard: a submit sometimes lands on a google vignette
+            # or ad overlay on the SAME page (no navigation captured) instead of
+            # the next step. Detect + dismiss, then resubmit once.
+            try:
+                stuck_here = ("#google_vignette" in au) or (af > 0 and i < 3 and f"Step {i} of 4" in (at or ""))
+            except Exception:
+                stuck_here = False
+            if stuck_here:
+                print(f"[worker] step{i}: vignette/same-step landing, dismissing + resubmit", flush=True)
+                try:
+                    await page.evaluate("document.querySelectorAll('[id*=vignette], [class*=vignette], ins.adsbygoogle-noablate').forEach(function(e){e.remove();}); document.documentElement.style.overflow=''; document.body.style.overflow=''; window.scrollTo(0,0);")
+                except Exception:
+                    pass
+                await asyncio.sleep(2)
+                try:
+                    if "google_vignette" in page.url:
+                        await page.evaluate("window.history.back()")
+                        await page.wait_for_load_state("domcontentloaded", timeout=20000)
+                        await asyncio.sleep(3)
+                except Exception:
+                    pass
+                try:
+                    if await page.locator("#fwd").count() > 0:
+                        if await _click_reveal(page, f"step{i}-retry2"):
+                            await page.evaluate("document.getElementById('fwd').submit()")
+                            try:
+                                await page.wait_for_load_state("domcontentloaded", timeout=20000)
+                            except Exception:
+                                pass
+                            await asyncio.sleep(3)
+                            au = page.url
+                            print(f"[worker] step{i} retry2 -> url={au[:120]}", flush=True)
+                except Exception:
+                    pass
+            # Wrong-landing guard: ad scripts sometimes steal the post-submit
+            # navigation (loan-ad domains). If we are not on a hindisink step
+            # page, go back and resubmit once instead of continuing blindly.
+            try:
+                bad = ("hindisink.com" not in au) or ("google.com" in au) or ("q7m4vk29" in au)
+            except Exception:
+                bad = False
+            if bad:
+                print(f"[worker] step{i}: wrong landing ({au[:100]}), going back + resubmit", flush=True)
+                try:
+                    await page.go_back(wait_until="domcontentloaded", timeout=20000)
+                except Exception:
+                    pass
+                await asyncio.sleep(3)
+                try:
+                    if await page.locator("#fwd").count() > 0:
+                        await page.evaluate("document.getElementById('hsg')?.remove();document.documentElement.style.overflow='';")
+                        if await _click_reveal(page, f"step{i}-retry"):
+                            await page.evaluate("document.getElementById('fwd').submit()")
+                            try:
+                                await page.wait_for_load_state("domcontentloaded", timeout=20000)
+                            except Exception:
+                                pass
+                            await asyncio.sleep(3)
+                            au = page.url
+                            print(f"[worker] step{i} retry -> url={au[:120]}", flush=True)
+                except Exception:
+                    pass
+            prog(f"Step {i} of 4 done...")
             prog(f"Step {i} of 4 done...")
 
         prog("Final step: unlocking your link...")
@@ -255,33 +448,101 @@ async def run_bypass(short_url: str, progress_cb=None):
                 pass
             await asyncio.sleep(1)
         await page.evaluate("document.getElementById('hsg')?.remove();")
-        await asyncio.sleep(DWELL)
+        # Final page has TWO variants (observed):
+        #  A) #final is an <a> whose href (?t=...) is assigned by the reveal
+        #     -> navigate DIRECTLY to the href (skip google vignette).
+        #  B) #final is a <button type=submit> inside #fwd -> POST to q7m4go.php
+        #     -> submit #fwd after the reveal (4th form submit).
+        ok_fin = await _click_reveal(page, "final")
+        if not ok_fin:
+            print("[worker] final: reveal stalled, trying submit anyway", flush=True)
         try:
-            await page.evaluate("document.getElementById('final').click()")
-        except Exception as e:
-            raise RuntimeError(f"Final step button missing: {e}")
-        try:
-            await page.wait_for_load_state("domcontentloaded", timeout=20000)
+            tag = await page.evaluate("document.getElementById('final') ? document.getElementById('final').tagName : ''")
+            final_is_link = (tag or "").upper() == "A"
         except Exception:
-            pass
-        await asyncio.sleep(4)
+            final_is_link = False
+        # Resolve the final step. Two observed variants:
+        #  A) #final is an <a> whose href (?t=...) is assigned by the reveal
+        #     -> navigate DIRECTLY to the href (skip google vignette).
+        #  B) #final is a <button type=submit> inside #fwd -> POST to q7m4go.php
+        #     -> submit #fwd after the reveal (4th form submit).
+        # Robust rule: if #final is an <a> WITH a valid http href -> navigate.
+        # Otherwise (button, OR anchor without href) -> submit #fwd.
+        final_href = None
+        if final_is_link:
+            try:
+                final_href = await page.evaluate("document.getElementById('final').getAttribute('href')")
+            except Exception:
+                final_href = None
+            if not final_href or not final_href.startswith("http"):
+                try:
+                    html = await page.content()
+                    idx = html.find("linkshortx.in/")
+                    if idx > 0:
+                        s = html.rfind("https://", 0, idx)
+                        e = s
+                        while e < len(html) and html[e] not in ('"', "'", "<", " "):
+                            e += 1
+                        cand = html[s:e]
+                        if cand.startswith("https://linkshortx.in/") and "?t=" in cand:
+                            final_href = cand
+                except Exception:
+                    pass
+        if final_href and final_href.startswith("http"):
+            try:
+                await page.goto(final_href, wait_until="commit", timeout=45000)
+                await page.wait_for_load_state("domcontentloaded", timeout=30000)
+            except Exception:
+                pass
+            await asyncio.sleep(4)
+        else:
+            # Button variant (or anchor without href): submit #fwd.
+            try:
+                n = await page.locator("#fwd").count()
+            except Exception:
+                n = 0
+            if not n:
+                raise RuntimeError("Final step form missing (link may have expired)")
+            await page.evaluate("document.getElementById('fwd').submit()")
+            try:
+                await page.wait_for_load_state("domcontentloaded", timeout=30000)
+            except Exception:
+                pass
+            await asyncio.sleep(4)
 
         prog("Almost there: fetching your link...")
+        # Interstitial: arm fires on page load; POLL for the reveal which
+        # assigns a.get-link href=/links/gw/... directly. NEVER submit
+        # #go-link: submitting POSTs again burns the one-shot token
+        # (server answers Bad Request). Navigate to the gw href instead.
+        gw_href = None
         for _ in range(20):
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)
+            try:
+                cls = await page.evaluate("document.querySelector('a.get-link') ? document.querySelector('a.get-link').getAttribute('class') : ''")
+                href = await page.evaluate("document.querySelector('a.get-link') ? document.querySelector('a.get-link').getAttribute('href') : ''")
+                if cls and "disabled" not in cls and href and href != "javascript: void(0)":
+                    gw_href = href
+                    break
+            except Exception:
+                pass
+        if gw_href:
+            if gw_href.startswith("/"):
+                gw_href = "https://linkshortx.in" + gw_href
+            gw = gw_href
+            try:
+                await page.goto(gw_href, wait_until="commit", timeout=45000)
+                await page.wait_for_load_state("domcontentloaded", timeout=30000)
+            except Exception:
+                pass
+            await asyncio.sleep(4)
+        else:
             try:
                 gl = page.locator("a.get-link")
                 if await gl.count() > 0:
                     cls = await gl.first.get_attribute("class")
                     if cls and "disabled" not in cls:
-                        break
-            except Exception:
-                pass
-        try:
-            await page.locator("a.get-link").first.click(timeout=10000)
-        except Exception:
-            try:
-                await page.evaluate("document.getElementById('go-submit').disabled=false; document.getElementById('go-link').submit()")
+                        await gl.first.click(timeout=8000)
             except Exception:
                 pass
         for _ in range(15):
