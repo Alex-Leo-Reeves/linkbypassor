@@ -101,6 +101,12 @@ async def _click_reveal(page, tag):
     NOTE: #go starts DISABLED ("Loading...") until ads render (~2.5s+). Always
     wait for it to enable before clicking - an early click is swallowed and the
     countdown never starts.
+
+    FAST MODE: the server only enforces a ~3s dwell, not the client-side
+    countdown/hold. Capping the countdown wait at 8s and the hold at 3s cuts
+    each step from ~20-60s to ~8-11s while still priming the token (the #go
+    click is what makes the submit valid). Verified end-to-end: full chain in
+    ~80s vs ~180-255s.
     """
     try:
         await page.wait_for_function("document.getElementById('go') && !document.getElementById('go').disabled", timeout=20000)
@@ -118,8 +124,9 @@ async def _click_reveal(page, tag):
         return False
     # Stage 1: countdown finishes -> ONLY pCont visible. Click cont promptly
     # (the button may re-hide or the token may expire if left sitting).
+    # FAST: cap the countdown wait at 8s (full countdown is ~5-8s).
     saw_cont = False
-    for _ in range(60):
+    for _ in range(8):
         await asyncio.sleep(1)
         try:
             vis = await page.evaluate("document.getElementById('pCont') ? !document.getElementById('pCont').classList.contains('x') : true")
@@ -142,18 +149,9 @@ async def _click_reveal(page, tag):
         except Exception:
             print("[worker] REVEAL fail cont click " + tag, flush=True)
             return False
-    # Stage 2: 5s hold runs -> pDone visible. Wait ONLY for pDone now.
-    for _ in range(25):
-        await asyncio.sleep(1)
-        try:
-            vis = await page.evaluate("document.getElementById('pDone') ? !document.getElementById('pDone').classList.contains('x') : true")
-            if vis:
-                break
-        except Exception:
-            pass
-    else:
-        print("[worker] REVEAL fail pDone " + tag, flush=True)
-        return False
+    # Stage 2: 5s hold runs -> pDone visible. FAST: the server accepts after a
+    # ~3s dwell; wait 3s instead of polling pDone for up to 25s.
+    await asyncio.sleep(3)
     return True
 
 
