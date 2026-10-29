@@ -61,7 +61,7 @@ async def _new_page(pw):
                 if u.startswith("about:") or u.startswith("data:"):
                     await r.continue_()
                     return
-                if "hindisink.com" in u or "linkshortx.in" in u or "urlshortx.io" in u or "google.com" in u:
+                if "hindisink.com" in u or "linkshortx.in" in u or "urlshortx.io" in u or "google.com" in u or "telegram.me" in u or "t.me/" in u:
                     await r.continue_()
                     return
                 print(f"[worker] blocked off-site nav: {u[:150]}", flush=True)
@@ -530,7 +530,10 @@ async def run_bypass(short_url: str, progress_cb=None):
                 pass
         if gw_href:
             if gw_href.startswith("/"):
-                gw_href = "https://linkshortx.in" + gw_href
+                # Relative gateway href: prefix with whichever shortener served
+                # the interstitial (urlshortx.io or linkshortx.in).
+                host = "https://urlshortx.io" if "urlshortx.io" in page.url else "https://linkshortx.in"
+                gw_href = host + gw_href
             gw = gw_href
             try:
                 await page.goto(gw_href, wait_until="commit", timeout=45000)
