@@ -29,7 +29,7 @@ function addRow(prefill) {
   const div = document.createElement("div");
   div.className = "link-row";
   const inp = document.createElement("input");
-  inp.type = "url"; inp.placeholder = "https://linkshortx.in/XXXXXX"; inp.value = prefill||"";
+  inp.type = "url"; inp.placeholder = "https://linkshortx.in or urlshortx.io /XXXXXX"; inp.value = prefill||"";
   const go = document.createElement("button");
   go.className = "btn btn-blue proceed"; go.textContent = "Bypass";
   const del = document.createElement("button");

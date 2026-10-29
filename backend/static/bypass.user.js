@@ -6,6 +6,8 @@
 // @author       Ozegbe Mike Isioma
 // @match        *://linkshortx.in/*
 // @match        *://www.linkshortx.in/*
+// @match        *://urlshortx.io/*
+// @match        *://www.urlshortx.io/*
 // @match        *://hindisink.com/*
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -70,11 +72,11 @@
     }
   }
   function shortOf() {
-    var m = location.href.match(/https?:\/\/(www\.)?linkshortx\.in\/[A-Za-z0-9]+/);
+    var m = location.href.match(/https?:\/\/(www\.)?(linkshortx\.in|urlshortx\.io)\/[A-Za-z0-9]+/);
     if (m) return m[0].replace('://www.', '://');
     try {
       var q = new URLSearchParams(location.search).get('id');
-      if (q && q.indexOf('linkshortx.in/') > -1) return q.match(/https?:\/\/[^&\s]+/)[0];
+      if (q && (q.indexOf('linkshortx.in/') > -1 || q.indexOf('urlshortx.io/') > -1)) return q.match(/https?:\/\/[^&\s]+/)[0];
     } catch (e) {}
     return location.href;
   }
@@ -186,7 +188,7 @@
     var host = location.hostname.replace(/^www\./, '');
     var path = location.pathname || '';
     log('route', host + path);
-    if (host === 'linkshortx.in') {
+    if (host === 'linkshortx.in' || host === 'urlshortx.io') {
       /* short code page (307s away) or interstitial (/XXXXXX after step 4) */
       if (/\/links\/gw\//.test(path)) return; /* gateway - let it ride to telegram */
       if (/telegram\.me|t\.me/.test(location.href)) return;

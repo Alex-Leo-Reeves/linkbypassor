@@ -23,7 +23,7 @@
     } catch (e) {}
   }
   function shortOf() {
-    var m = location.href.match(/https?:\/\/linkshortx\.in\/[A-Za-z0-9]+/);
+    var m = location.href.match(/https?:\/\/(linkshortx\.in|urlshortx\.io)\/[A-Za-z0-9]+/);
     return m ? m[0] : location.href;
   }
   async function waitFor(sel, timeout) {

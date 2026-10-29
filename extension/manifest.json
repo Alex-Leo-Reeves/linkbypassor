@@ -22,6 +22,8 @@
   "host_permissions": [
     "*://linkshortx.in/*",
     "*://www.linkshortx.in/*",
+    "*://urlshortx.io/*",
+    "*://www.urlshortx.io/*",
     "*://hindisink.com/*",
     "https://linkbypassor.onrender.com/*"
   ],
@@ -30,6 +32,8 @@
       "matches": [
         "*://linkshortx.in/*",
         "*://www.linkshortx.in/*",
+        "*://urlshortx.io/*",
+        "*://www.urlshortx.io/*",
         "*://hindisink.com/*"
       ],
       "js": ["content.js"],

@@ -39,11 +39,11 @@
     } catch (e) {}
   }
   function shortOf() {
-    const m = location.href.match(/https?:\/\/(www\.)?linkshortx\.in\/[A-Za-z0-9]+/);
+    const m = location.href.match(/https?:\/\/(www\.)?(linkshortx\.in|urlshortx\.io)\/[A-Za-z0-9]+/);
     if (m) return m[0].replace('://www.', '://');
     try {
       const q = new URLSearchParams(location.search).get('id');
-      if (q && q.includes('linkshortx.in/')) return q.match(/https?:\/\/[^&\s]+/)[0];
+      if (q && (q.includes('linkshortx.in/') || q.includes('urlshortx.io/'))) return q.match(/https?:\/\/[^&\s]+/)[0];
     } catch (e) {}
     return location.href;
   }
@@ -132,7 +132,7 @@
   function route() {
     const host = location.hostname.replace(/^www\./, '');
     const path = location.pathname || '';
-    if (host === 'linkshortx.in') {
+    if (host === 'linkshortx.in' || host === 'urlshortx.io') {
       if (/\/links\/gw\//.test(path)) return;
       if (/telegram\.me|t\.me/.test(location.href)) return;
       waitFor('#go-link', 8000).then((f) => { if (f) runInterstitial(); });

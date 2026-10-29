@@ -49,8 +49,10 @@ async def _new_page(pw):
     await ctx.add_init_script("Object.defineProperty(document,'visibilityState',{get:()=> 'visible',configurable:true}); Object.defineProperty(document,'hidden',{get:()=>false,configurable:true}); window.blurred=false; document.hasFocus=()=>true; document.addEventListener('visibilitychange',function(e){e.stopImmediatePropagation();},true);")
     # Ad-hijack guard: block off-site DOCUMENT navigations (the loan-ad domain
     # steals the main frame after form submits). Subresource loads are left
-    # alone - the entry redirect chain needs its scripts. Only hindisink,
-    # linkshortx and google document navigations are allowed through.
+    # alone - the entry redirect chain needs its scripts. Allowed document
+    # hosts: hindisink, linkshortx, urlshortx (LinkShortX sibling), and google.
+    # urlshortx.io/1o0g 307s into the exact same q7m4vk29 funnel as linkshortx,
+    # and its gateway/interstitial may live on either shortener host.
     async def _guard_nav(r):
         try:
             req = r.request
@@ -59,7 +61,7 @@ async def _new_page(pw):
                 if u.startswith("about:") or u.startswith("data:"):
                     await r.continue_()
                     return
-                if "hindisink.com" in u or "linkshortx.in" in u or "google.com" in u:
+                if "hindisink.com" in u or "linkshortx.in" in u or "urlshortx.io" in u or "google.com" in u:
                     await r.continue_()
                     return
                 print(f"[worker] blocked off-site nav: {u[:150]}", flush=True)
@@ -476,13 +478,15 @@ async def run_bypass(short_url: str, progress_cb=None):
                 try:
                     html = await page.content()
                     idx = html.find("linkshortx.in/")
+                    if idx < 0:
+                        idx = html.find("urlshortx.io/")
                     if idx > 0:
                         s = html.rfind("https://", 0, idx)
                         e = s
                         while e < len(html) and html[e] not in ('"', "'", "<", " "):
                             e += 1
                         cand = html[s:e]
-                        if cand.startswith("https://linkshortx.in/") and "?t=" in cand:
+                        if (cand.startswith("https://linkshortx.in/") or cand.startswith("https://urlshortx.io/")) and "?t=" in cand:
                             final_href = cand
                 except Exception:
                     pass
