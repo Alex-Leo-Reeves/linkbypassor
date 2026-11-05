@@ -115,44 +115,18 @@ def _run_job(jid, short_url):
     def prog(msg):
         update_job(jid, status="running", progress=msg)
 
-    # Render-only strategy order (all server-side, zero user steps):
-    #  0. curl_cffi HTTP fast path (no browser, ~40s). Falls through fast
-    #     on any HTTP-* error (including HTTP-403 datacenter block).
-    #  1. Local Playwright full chain (works wherever the host IP passes).
+    # Single server-side path, zero user steps: the local Playwright chain.
+    # NOTE: the old curl_cffi "fast path" (run_curl_bypass, ~40s) was removed -
+    # it never returned a telegram link (the interstitial needs a real browser),
+    # so every job discarded its result and re-ran from scratch. Dropping it
+    # saves ~40s per job with no functional change.
     # NOTE: the GitHub Actions bridge is intentionally NOT in this path:
     # Azure runners 403 identically, and dispatching only burns minutes
     # before the same failure. See PROBLEM.md.
     update_job(jid, status="running", progress="Starting...")
-    # Strategy 0: HTTP fast path first (cheap, ~40s). Any HTTP-* error means
-    # the datacenter IP is rejected at that stage -> fall through to browser.
-    # A non-HTTP exception (missing lib, bug) is also non-fatal: fall through.
-    curl_res = None
-    try:
-        from curl_path import run_curl_bypass
-
-        try:
-            prog("Trying HTTP fast path...")
-            curl_res = run_curl_bypass(short_url, progress_cb=prog)
-        except Exception as e:
-            if str(e).startswith("HTTP-"):
-                prog(f"Fast path skipped ({e}); using browser...")
-            else:
-                prog(f"Fast path unavailable ({str(e)[:120]}); using browser...")
-    except Exception as e:
-        prog(f"Fast path unavailable ({str(e)[:120]}); using browser...")
-    if curl_res and curl_res.get("telegram"):
-        tg = curl_res["telegram"]
-        update_job(
-            jid, status="done", progress="Done!",
-            gateway=curl_res.get("gateway"), telegram=tg,
-            final_url=curl_res.get("final_url") or tg,
-        )
-        return
-    if curl_res:
-        prog(f"Fast path through step 3 ({(curl_res.get('final_href') or '')[:60]}); browser takes step 4...")
-    # Strategy 1: local Playwright full chain. The browser binary path is
-    # pinned at build time (render.yaml) + forced in worker.py; if the host
-    # IP is blocked the worker raises HTTP-403 and the job fails honestly.
+    # Local Playwright full chain on the *requesting* host's network (the
+    # laptop via ngrok for the live site, so a residential IP bypasses the
+    # shortener's datacenter-403 block).
     try:
         result = asyncio.run(run_bypass(short_url, progress_cb=prog))
         telegram = result.get("telegram") or result.get("final_url")
